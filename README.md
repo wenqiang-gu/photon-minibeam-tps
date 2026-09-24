@@ -9,9 +9,10 @@ Use Python 3.12–3.14 (validated with 3.13).
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements-lock.txt
-python -m pip install -e . --no-deps
+python -m pip install -e .
 ```
+
+Dependencies are declared in `pyproject.toml`; pip installs them automatically. To also install the test tools, use `python -m pip install -e ".[test]"`.
 
 For later sessions, run `source .venv/bin/activate` from the repository root. All commands below start there unless a cluster directory is shown.
 
