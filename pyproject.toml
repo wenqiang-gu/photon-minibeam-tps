@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "photon-minibeam-tps"
+version = "0.1.0"
+description = "pyRadPlan photon steering and portable OpenTOPAS dose calculation"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "pyRadPlan==0.5.0", "numpy==2.3.5", "scipy==1.18.1",
+  "matplotlib==3.11.2", "SimpleITK==2.5.6", "pydicom==3.0.2", "scikit-image==0.26.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest==9.1.1"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["minibeam*"]
+
+[tool.setuptools.package-data]
+"minibeam.geometry" = ["config.toml"]
+"minibeam.materials" = ["data/*.txt", "data/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["topas: requires an installed OpenTOPAS executable", "patient: uses ignored local patient data"]
