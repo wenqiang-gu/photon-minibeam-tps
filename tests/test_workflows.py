@@ -197,3 +197,23 @@ def test_project_required_and_old_option_removed(stage):
         workflow.parse_arguments([stage])
     with pytest.raises(SystemExit):
         workflow.parse_arguments([stage,'--run-dir','runs/old'])
+
+
+@pytest.mark.parametrize('threads', [1, 4])
+def test_top_level_threads_written(monkeypatch, case, tmp_path, capsys, threads):
+    setup_workflow(monkeypatch, case, tmp_path)
+    monkeypatch.setattr(workflow, 'TOPAS_THREADS_PER_JOB', threads)
+    workflow.main()
+    root = tmp_path/'workflow'
+    assert f'i:Ts/NumberOfThreads = {threads}' in (root/'inputs/common.txt').read_text()
+    manifest = json.loads((root/'manifest.json').read_text())
+    assert manifest['num_threads'] == threads
+    assert f'TOPAS threads per job: {threads}' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('threads', [True, False, 0, -1, 4.0, '4', None])
+def test_top_level_threads_invalid(monkeypatch, case, tmp_path, threads):
+    setup_workflow(monkeypatch, case, tmp_path)
+    monkeypatch.setattr(workflow, 'TOPAS_THREADS_PER_JOB', threads)
+    with pytest.raises(ValueError, match='TOPAS_THREADS_PER_JOB must be a positive integer'):
+        workflow.configure_plan(project_dir=tmp_path/'unused')

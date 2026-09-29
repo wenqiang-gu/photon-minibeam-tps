@@ -808,3 +808,15 @@ original/mapped ROI contours on three physical-coordinate CT slices, retains the
 full CT extent and marks the scoring boundary. It supports separate and combined
 columns, optional exposure weights, a reference position, and PNG export. See
 [`matlab/README.md`](matlab/README.md) for examples and interpretation.
+
+### TOPAS threads per patient job
+
+Set `TOPAS_THREADS_PER_JOB = 4` beside `HISTORIES_PER_JOB` in
+`patient_workflow.py`. This positive integer controls CPU threads **within each
+TOPAS job**, not the number of simultaneous jobs. Inspection and preparation print
+it; fresh preparation writes `Ts/NumberOfThreads` into `inputs/common.txt` and
+records it in the manifest. Match the cluster scheduler's CPU allocation per job
+to this setting. Four threads is the patient-script default; the engine default
+for other callers remains one. Existing projects are not modified: prepare a new
+project when changing the setting. Saved-project `collect` and `forward` do not
+use this current setting.

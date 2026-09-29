@@ -260,7 +260,7 @@ class JobWriter:
                     ("pyRadPlan", "numpy", "scipy", "SimpleITK", "pydicom")}
         manifest = {"schema_version": 3, "history_budget": "per_job", "beamlet_execution": self.beamlet_execution, "request_id": request_id, "files": files,
                     "implementation_sha256": definition["implementation_sha256"],
-                    "enable_opengl": self.enable_opengl,
+                    "enable_opengl": self.enable_opengl, "num_threads": self.num_threads,
                     "versions": versions, "topas_target": "4.2.p3", "jobs": jobs,
                     "planning": definition["planning"],
                     "beam_geometry": definition["beam_geometry"],

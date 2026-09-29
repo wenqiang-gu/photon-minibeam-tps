@@ -62,6 +62,8 @@ PHASE_SPACE_FILE_BASES = [
 # Consume part1 first, then later parts as needed; no recycling.
 # Try 1_000_000 for an initial phase-space validation run.
 HISTORIES_PER_JOB = 680_000_000
+# CPU threads per TOPAS job, not the number of simultaneous jobs.
+TOPAS_THREADS_PER_JOB = 4
 
 # Hardware: disabling the collimator ignores all shift/slit overrides.
 ENABLE_COLLIMATOR = True  # overrides TOML aperture.enabled; MLC and jaws unchanged
@@ -116,6 +118,8 @@ def configure_plan(*, project_dir):
     """
     if TARGET is None or GANTRY_ANGLES is None:
         raise SystemExit("Set TARGET and GANTRY_ANGLES in patient_workflow.py first")
+    if type(TOPAS_THREADS_PER_JOB) is not int or TOPAS_THREADS_PER_JOB < 1:
+        raise ValueError("TOPAS_THREADS_PER_JOB must be a positive integer")
     if BEAMLET_EXECUTION not in {"separate", "combined"}:
         raise ValueError("BEAMLET_EXECUTION must be separate or combined")
     if type(ONLY_CENTRAL_BEAMLET) is not bool:
@@ -142,7 +146,7 @@ def configure_plan(*, project_dir):
         plan.prop_stf["iso_center"] = iso.reshape(1, 3)
     # Without an override generate_stf uses native cst.target_center_of_mass().
     plan.prop_dose_calc = {"engine": "TOPASPhoton", "bundle_dir": str(project_dir),
-                          "histories": HISTORIES_PER_JOB, "beamlet_execution": BEAMLET_EXECUTION, "water": WATER, "enable_opengl": ENABLE_OPENGL}
+                          "histories": HISTORIES_PER_JOB, "num_threads": TOPAS_THREADS_PER_JOB, "beamlet_execution": BEAMLET_EXECUTION, "water": WATER, "enable_opengl": ENABLE_OPENGL}
     if SOURCE_TYPE not in {'point','phase_space'}:
         raise ValueError('SOURCE_TYPE must be point or phase_space')
     plan.prop_dose_calc['source_config'] = {'type': SOURCE_TYPE}
@@ -171,6 +175,7 @@ def planning_directory(project_dir):
         raise SystemExit("This is a single-project directory; use its study parent or a new study root")
     print("Collimator: enabled" if ENABLE_COLLIMATOR else
           "Collimator: disabled; collimator rotations, shifts and slit overrides are inactive")
+    print(f"TOPAS threads per job: {TOPAS_THREADS_PER_JOB}")
     return root, fractions, rotations
 
 
