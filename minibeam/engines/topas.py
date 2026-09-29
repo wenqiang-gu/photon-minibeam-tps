@@ -21,6 +21,8 @@ class TOPASPhotonEngine(DoseEngineBase):
     seed: int = 12345
     num_threads: int = 1
     enable_opengl: bool = False
+    enforce_ct_crop_protection: bool = True
+    ct_crop_voxels: dict | None = None
     dose_spacing_mm: tuple | None = None
     material_file: str | None = None
     dicom_dir: str | None = None
@@ -50,6 +52,8 @@ class TOPASPhotonEngine(DoseEngineBase):
         else:
             config = {}
         config.update(options)
+        if {"ct_crop_allow_clipping_rois", "enforce_ct_crop_material_check"} & config.keys():
+            raise ValueError("Obsolete crop options: remove ct_crop_allow_clipping_rois and use enforce_ct_crop_protection instead of enforce_ct_crop_material_check; targets remain protected")
         allowed = set(TOPASPhotonEngine.__annotations__)
         for key, value in config.items():
             if key not in allowed:
@@ -61,6 +65,8 @@ class TOPASPhotonEngine(DoseEngineBase):
                 raise ValueError(f"{name} must be a positive integer")
         if self.histories < 2 or self.histories > 2**31 - 1 or self.seed > 2**31 - 1:
             raise ValueError("Histories must be 2..2^31-1 and seed within 1..2^31-1")
+        if type(self.enforce_ct_crop_protection) is not bool:
+            raise ValueError("enforce_ct_crop_protection must be a Boolean")
         if type(self.enable_opengl) is not bool:
             raise ValueError("enable_opengl must be a boolean")
         if source_model is not None and self.source_config is not None:
@@ -71,11 +77,11 @@ class TOPASPhotonEngine(DoseEngineBase):
             kind=self.source_config.get('type')
             if kind=='point' and set(self.source_config)=={'type'}:
                 source_model=PointBeamletSource()
-            elif kind=='phase_space' and set(self.source_config)=={'type','file_base'}:
+            elif kind=='phase_space' and set(self.source_config) in ({'type','file_base'}, {'type','file_bases'}):
                 from ..sources.phase_space import PhaseSpaceBeamletSource
-                source_model=PhaseSpaceBeamletSource(self.source_config['file_base'])
+                source_model=PhaseSpaceBeamletSource(**{k:v for k,v in self.source_config.items() if k != 'type'})
             else:
-                raise ValueError('source_config requires type=point, or type=phase_space and file_base')
+                raise ValueError('source_config requires type=point, or type=phase_space and exactly one of file_base or file_bases')
             self._plan_info['source_configuration']=json_data(self.source_config)
         if self.beamlet_execution not in {"separate", "combined"}:
             raise ValueError("beamlet_execution must be separate or combined")
@@ -149,7 +155,7 @@ class TOPASPhotonEngine(DoseEngineBase):
         manifest = load_manifest(root)
         if manifest.get('beamlet_execution','separate') != self.beamlet_execution:
             raise ValueError('Native dose execution mode differs from saved bundle')
-        validate_request(manifest, ct, stf, self.dose_spacing_mm)
+        validate_request(manifest, ct, stf, self.dose_spacing_mm, self.ct_crop_voxels, cst, self.enforce_ct_crop_protection)
         return root
 
     def _calc_dose(self, ct, cst, stf):
@@ -172,7 +178,9 @@ class TOPASPhotonEngine(DoseEngineBase):
             w = np.asarray(weights)
         result = results.collect_forward(w, root, manifest=manifest)
         dose = result["physical_dose"]
-        if dose.GetSize() != ct.cube_hu.GetSize() or dose.GetSpacing() != ct.cube_hu.GetSpacing():
+        from ..geometry.cropping import coverage_image
+        result["dose_coverage"] = coverage_image(dose, ct.cube_hu)
+        if manifest["dose_grid"] != manifest["ct_grid"]:
             # CT-grid dose is for viewing. Statistical errors remain on the
             # scoring grid because spatial covariance is not stored.
             result["physical_dose_dose_grid"] = dose

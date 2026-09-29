@@ -55,6 +55,7 @@ class SlitGeometry(FrozenGeometry):
     width_mm: float = Field(gt=0)
     height_mm: float = Field(gt=0)
     rotation_x_deg: float
+    rotation_z_deg: float = 0.0
     rotation_y_deg: float
     brass_frame_thickness_x_mm: float = Field(gt=0)
     brass_frame_thickness_y_mm: float = Field(gt=0)

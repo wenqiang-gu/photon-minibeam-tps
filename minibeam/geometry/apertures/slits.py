@@ -171,7 +171,7 @@ def render_collimator(g: Geometry) -> str:
         f"# {len(g.collimator_blades)} parallel-sided brass blades are clipped flush with the",
         "# entrance and exit planes and focused toward the point source at",
         "# z = %.6f mm." % g.source_z,
-        "# RotX and RotY rigidly rotate this complete pre-focused assembly",
+        "# RotX/Y/Z rigidly rotate this complete pre-focused assembly",
         "# about its geometric center; all daughters inherit the transform.",
         "",
         's:Ge/Collimator/Type     = "TsBox"',
@@ -180,11 +180,12 @@ def render_collimator(g: Geometry) -> str:
         f"d:Ge/Collimator/HLX = {half_x:.6f} mm",
         f"d:Ge/Collimator/HLY = {half_y:.6f} mm",
         f"d:Ge/Collimator/HLZ = {half_z:.6f} mm",
-        f"d:Ge/Collimator/TransX = {g.lateral_shift_mm:.6f} mm",
-        "d:Ge/Collimator/TransY = 0 mm",
-        f"d:Ge/Collimator/TransZ = {g.collimator_center_z:.6f} mm",
+        f"d:Ge/Collimator/TransX = {g.center_beam_mm[0]:.6f} mm",
+        f"d:Ge/Collimator/TransY = {g.center_beam_mm[1]:.6f} mm",
+        f"d:Ge/Collimator/TransZ = {g.center_beam_mm[2]:.6f} mm",
         f"d:Ge/Collimator/RotX = {g.collimator_rotation_x:.6f} deg",
         f"d:Ge/Collimator/RotY = {g.collimator_rotation_y:.6f} deg",
+        f"d:Ge/Collimator/RotZ = {g.collimator_rotation_z:.6f} deg",
         "",
         's:Ge/CollimatorAir/Type     = "TsBox"',
         's:Ge/CollimatorAir/Parent   = "Collimator"',
@@ -247,7 +248,7 @@ def render_collimator(g: Geometry) -> str:
 class SlitAperture:
     """Focused brass blades; replaceable aperture resolver/renderer/report geometry."""
     config_keys = {'enabled','type','material','source_to_center_mm','thickness_mm','width_mm','height_mm',
-                   'rotation_x_deg','rotation_y_deg','brass_frame_thickness_x_mm','brass_frame_thickness_y_mm',
+                   'rotation_x_deg','rotation_y_deg','rotation_z_deg','brass_frame_thickness_x_mm','brass_frame_thickness_y_mm',
                    'slit_count','slit_entrance_width_mm','slit_entrance_ctc_mm','blade_thickness_mm','lateral_shift_mm'}
 
     @staticmethod
@@ -274,10 +275,16 @@ class SlitAperture:
             collimator_thickness=thickness,collimator_air_width=air_width,collimator_air_height=air_height,
             lateral_shift_mm=c.get('lateral_shift_mm',0.0),nominal_entrance_ctc_mm=c['slit_entrance_ctc_mm'],
             collimator_center_z=distance-sad,collimator_rotation_x=c['rotation_x_deg'],
-            collimator_rotation_y=c['rotation_y_deg'],slit_count=c['slit_count'])
+            collimator_rotation_y=c['rotation_y_deg'],collimator_rotation_z=c.get('rotation_z_deg',0.0),slit_count=c['slit_count'])
         keys=['collimator_blades','entrance_slit_centers','exit_slit_centers','entrance_slit_widths',
               'exit_slit_widths','entrance_slit_ctcs','exit_slit_ctcs','entrance_edge_gap','exit_edge_gap']
         for key,value in zip(keys,layout):setattr(g,key,value)
+        from ..spatial import placement_rotation
+        import numpy as np
+        rotation = placement_rotation(g.collimator_rotation_x, g.collimator_rotation_y, g.collimator_rotation_z)
+        g.rotation_matrix = rotation.tolist()
+        g.translation_beam_mm = (rotation[:,0]*g.lateral_shift_mm).tolist()
+        g.center_beam_mm = (np.array([0.,0.,g.collimator_center_z])+g.translation_beam_mm).tolist()
         return g
 
     @staticmethod
@@ -286,24 +293,22 @@ class SlitAperture:
 
     @staticmethod
     def envelope(g):
-        from ..spatial import placement_rotation
-        return {'name':'SlitCollimator', 'center':[g.lateral_shift_mm,0,g.collimator_center_z],
+        return {'name':'SlitCollimator', 'center':g.center_beam_mm,
                 'half_size':[g.collimator_width/2,g.collimator_height/2,g.collimator_thickness/2],
-                'rotation':placement_rotation(g.collimator_rotation_x,g.collimator_rotation_y).tolist()}
+                'rotation':g.rotation_matrix}
 
     @staticmethod
     def drawing(g):
         # Beam-local polygons shared by the geometry report's projections.
-        from ..spatial import placement_rotation
         import numpy as np
-        rotation=placement_rotation(g.collimator_rotation_x,g.collimator_rotation_y)
+        rotation=np.asarray(g.rotation_matrix)
         h=g.collimator_thickness/2
         polygons=[]
         for blade in g.collimator_blades:
             w=blade.projected_width_x/2
             points=np.array([[blade.entrance_center_x-w,0,-h],[blade.entrance_center_x+w,0,-h],
                              [blade.exit_center_x+w,0,h],[blade.exit_center_x-w,0,h]])
-            polygons.append((points@rotation.T + [g.lateral_shift_mm,0,g.collimator_center_z]).tolist())
+            polygons.append((points@rotation.T + g.center_beam_mm).tolist())
         return polygons
 
 
@@ -323,11 +328,12 @@ class SlitAperture:
 
     @staticmethod
     def summary(g):
-        return [f'Rigid shift along beam X: {g.lateral_shift_mm:g} mm; nominal CTC: {g.nominal_entrance_ctc_mm:g} mm',
+        return [f'Rigid shift across rotated slits: {g.lateral_shift_mm:g} mm; nominal CTC: {g.nominal_entrance_ctc_mm:g} mm',
             f'Aperture: {g.material}; {g.slit_count} slits / {len(g.collimator_blades)} blades',
             f'Outer X/Y/Z: {g.collimator_width:g}/{g.collimator_height:g}/{g.collimator_thickness:g} mm',
             f'Air X/Y: {g.collimator_air_width:g}/{g.collimator_air_height:g} mm',
-            f'Rotation X/Y: {g.collimator_rotation_x:g}/{g.collimator_rotation_y:g} deg',
+            f'TOPAS rotation X/Y/Z: {g.collimator_rotation_x:g}/{g.collimator_rotation_y:g}/{g.collimator_rotation_z:g} deg',
+            f'Translation in beam frame (mm): {g.translation_beam_mm}',
             f'Entrance slit width: {min(g.entrance_slit_widths):.3f} mm',
             f'Exit slit widths: {min(g.exit_slit_widths):.3f} to {max(g.exit_slit_widths):.3f} mm',
             f'Entrance CTC: {min(g.entrance_slit_ctcs):.3f} to {max(g.entrance_slit_ctcs):.3f} mm' if g.entrance_slit_ctcs else 'Single slit: no CTC',

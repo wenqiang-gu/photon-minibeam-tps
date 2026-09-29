@@ -34,6 +34,7 @@ class GeometryConfig:
         data = tomllib.loads(self.text)
         if isinstance(data.get('aperture'), dict):
             data['aperture'].setdefault('lateral_shift_mm', 0.0)
+            data['aperture'].setdefault('rotation_z_deg', 0.0)
         return data
 
     @property

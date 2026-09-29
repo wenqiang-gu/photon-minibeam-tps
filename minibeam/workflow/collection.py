@@ -62,6 +62,34 @@ def planning_snapshot(root, manifest):
     data = loadmat(path, simplify_cells=True)
     if not {'ct','cst','pln','stf'}.issubset(data):
         raise ValueError('Incomplete planning snapshot')
+    crop = manifest.get('crop_metadata')
+    if crop is not None:
+        saved_crop = data.get('crop_metadata')
+        if not isinstance(saved_crop, dict):
+            raise ValueError('Missing crop metadata in planning snapshot')
+        if crop.get('protection_policy') == 'unified_target_protected_v1':
+            if saved_crop.get('protection_policy') != crop['protection_policy'] or 'enforce_protection' not in saved_crop or bool(saved_crop.get('enforce_protection')) != crop['enforce_protection']:
+                raise ValueError('Planning crop policy mismatch')
+        if 'allow_clipping_rois' in crop:
+            raw_names = saved_crop.get('allow_clipping_rois', [])
+            names = [raw_names] if isinstance(raw_names, str) else np.asarray(raw_names).ravel().tolist()
+            if names != crop['allow_clipping_rois']:
+                raise ValueError('Planning crop permissions mismatch')
+        if bool(saved_crop.get('enforce_material_check', True)) != crop.get('enforce_material_check', True):
+            raise ValueError('Planning crop enforcement mismatch')
+        for key in ('applied', 'indexing', 'safety_rule'):
+            if saved_crop.get(key) != crop[key]:
+                raise ValueError('Planning crop metadata mismatch')
+        for axis in 'xyz':
+            if not np.array_equal(saved_crop['retained_ranges'][axis], crop['retained_ranges'][axis]):
+                raise ValueError('Planning crop ranges mismatch')
+        from ..geometry.cropping import validate_saved_grids
+        validate_saved_grids(manifest)
+        # Hash validation protects the complete record; explicit checks also
+        # compare the transport grid for legacy/unhashed snapshots.
+        for key in ('dimensions','origin','direction'):
+            if not np.allclose(saved_crop['transport_grid'][key], crop['transport_grid'][key]):
+                raise ValueError('Planning transport grid mismatch')
     ct = data['ct']; grid = manifest['ct_grid']
     if any(g['dimensions'][0] != g['dimensions'][1] for g in (grid, manifest['dose_grid'])):
         raise ValueError('Native matRad export requires square transverse grids with pyRadPlan 0.5.0')
@@ -216,6 +244,33 @@ def indexing_report(manifest, stage, image=None):
     else:
         lines += [f"Forward MHA uses the CT grid: origin {grid['origin']}, spacing {grid['resolution']}, direction {grid['direction']}."]
     lines += ['Physical coordinates are DICOM LPS: Left, Posterior, Superior. SimpleITK NumPy arrays use zero-based `[Z,Y,X]` indexing.', '']
+    crop = manifest.get('crop_metadata')
+    if crop:
+        lines += ['## CT crop and dose coverage', '',
+            f"Retained original CT ranges: `{crop['retained_ranges']}`; {crop['indexing']}.",
+            f"Transport grid: `{crop['transport_grid']}`.",
+            f"Actual dose spacing (XYZ mm): `{crop['actual_dose_spacing_mm']}`.",
+            '`crop_metadata` is saved in steering.mat and result.mat. Original ct/cst are unchanged.',
+            'Dose matrix rows cover only the scoring grid; excluded CT voxels have no rows. Sparse zero entries within the grid still have logical rows.',
+            'Map CT structure masks to dij.doseGrid using physical coordinates and nearest-neighbor interpolation; do not reuse CT voxel indices.', '']
+        if crop.get('protection_policy') == 'unified_target_protected_v1':
+            lines += [f"Crop protection policy: `{crop['protection_policy']}`. ROI/material checks: {'enforced' if crop['enforce_protection'] else 'BYPASSED for non-target ROIs/material; selected targets remain protected'}.",
+                      f"Protection counts: `{crop.get('protection_counts', {})}`. Unique material total: {crop.get('material_flagged_voxels',0)}; ROI/material categories may overlap.", '']
+        else:
+            lines += [f"Legacy material protection: {'enforced' if crop.get('enforce_material_check',True) else 'BYPASSED; legacy target and unlisted-ROI checks remain enabled'}.",
+                      f"Legacy allowed clipping ROIs: `{crop.get('allow_clipping_rois', [])}`.", '']
+        clipped = [row for row in crop.get('roi_clipping', []) if row['removed_voxels']]
+        if clipped:
+            lines += ['### Clipped ROIs', '', '| ROI | Removed / original voxels | Removed | Extent | Dose coverage |',
+                      '|---|---:|---:|---|---|']
+            for row in clipped:
+                name = row['name'].replace('|', r'\|').replace('\n', ' ')
+                extent = 'complete' if row['removed_voxels']==row['total_voxels'] else 'partial'
+                lines += [f"| {name} | {row['removed_voxels']:,} / {row['total_voxels']:,} | {row['removed_fraction']:.2%} | {extent} | incomplete dose-grid coverage |"]
+            lines += ['', 'Original cst is unchanged. Excluded ROI portions are unscored, not measured zero dose.', '']
+        if stage == 'forward':
+            lines += ['dose_scoring_grid.mha preserves scored resolution. dose.mha is resampled to the CT grid for display.',
+                'dose_coverage.mha marks CT centers inside the scoring extent. Outside coverage is unscored, not measured zero dose; numeric fill is zero.', '']
     return '\n'.join(lines)
 
 
@@ -278,6 +333,10 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
         result = results.collect_forward(weights, root, manifest=manifest, diagnostics=diagnostics,
                                          on_beam=plots.consume if plots is not None else None)
         image = result['physical_dose']
+        from ..geometry.cropping import coverage_image
+        with atomic_path(derived/'dose_scoring_grid.mha') as temp:
+            sitk.WriteImage(image, str(temp))
+        scored_image = image
         if 'physical_dose_std_error' in result:
             with atomic_path(derived/'dose_std_error_dose_grid.mha') as temp:
                 sitk.WriteImage(result['physical_dose_std_error'], str(temp))
@@ -285,6 +344,11 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
             grid = Grid.model_validate(manifest['ct_grid'])
             image = sitk.Resample(image, list(grid.dimensions), sitk.Transform(), sitk.sitkLinear,
                 tuple(grid.origin), tuple(grid.resolution_vector), tuple(grid.direction_vector), 0., sitk.sitkFloat64)
+        coverage = coverage_image(scored_image, image)
+        with atomic_path(derived/'dose_coverage.mha') as temp:
+            sitk.WriteImage(coverage, str(temp))
+        status['coverage'] = dict(file='dose_coverage.mha', meaning='1: center inside scoring extent; 0: unscored, not measured zero')
+        status['scoring_grid_dose'] = 'dose_scoring_grid.mha'
         with atomic_path(derived/'dose.mha') as temp:
             sitk.WriteImage(image, str(temp))
         status['weights'] = weights.tolist()
@@ -305,6 +369,7 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
             from .beam_dose_plot import beam_plot_report
             report += beam_plot_report(status['dose_plot'])
         temp.write_text(report)
+    status['crop_metadata'] = manifest.get('crop_metadata')
     status['scorer_warnings'] = diagnostics
     status['review_required'] = bool(diagnostics)
     status['status'] = 'complete'

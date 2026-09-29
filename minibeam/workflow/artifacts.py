@@ -18,6 +18,8 @@ def save_artifacts(ct, cst, plan, stf, root, stage, metadata, *, dij=None, resul
         if isinstance(value, dict): return {k: matlab(v) for k,v in value.items()}
         if isinstance(value, list): return [matlab(v) for v in value]
         return value
+    if manifest.get('crop_metadata'):
+        exported['crop_metadata'] = matlab(manifest['crop_metadata'])
     if manifest.get('column_mapping'):
         exported['column_mapping'] = manifest['column_mapping']
     exported['beamlet_execution'] = manifest.get('beamlet_execution','separate')

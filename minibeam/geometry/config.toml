@@ -29,8 +29,8 @@ thickness_mm = 77.0
 enabled = true
 type = "slits"
 material = "G4_BRASS"
-source_to_center_mm = 580.0
-thickness_mm = 90.0
+source_to_center_mm = 707.0
+thickness_mm = 100.0
 width_mm = 156.0
 height_mm = 174.0
 rotation_x_deg = 0.0
@@ -43,5 +43,5 @@ slit_entrance_width_mm = 2.0
 slit_entrance_ctc_mm = 6.0
 blade_thickness_mm = 4.0
 
-# Rigid translation of the whole slit assembly along fixed beam-frame X.
+# Rigid translation of the whole slit assembly along rotated aperture-local X (across slits).
 lateral_shift_mm = 0.0

@@ -80,7 +80,7 @@ def axial_data(ct, cst, slice_index, target_names):
             [lower[0],upper[0],lower[1],upper[1]], overlays)
 
 
-def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), diagnostics=None, source_records=None):
+def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), diagnostics=None, source_records=None, transport_grid=None):
     os.environ.setdefault('MPLCONFIGDIR',str(Path(tempfile.gettempdir())/'minibeam-matplotlib'))
     import matplotlib
     matplotlib.use('Agg')
@@ -95,6 +95,15 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
         raise ValueError('Patient report requires at least one beam')
     colors = plt.get_cmap('tab10')
     box, center = scene['ct_box'], scene['ct_center']
+    crop_box = None
+    if transport_grid is not None:
+        from itertools import product
+        spacing = np.array([transport_grid['resolution'][a] for a in 'xyz'])
+        lower = np.asarray(transport_grid['origin']) - spacing/2
+        upper = lower + np.asarray(transport_grid['dimensions'])*spacing
+        crop_box = np.array(list(product(*zip(lower, upper))))
+        if np.allclose(crop_box.min(axis=0), box.min(axis=0)) and np.allclose(crop_box.max(axis=0), box.max(axis=0)):
+            crop_box = None
     labels = ['X - Left (mm)', 'Y - Posterior (mm)', 'Z - Superior (mm)']
     all_points = np.vstack([box]+[np.vstack([b['source'],b['iso']]+[v for _,v in b['solids']]
                                  + ([b['phase_plane']] if b['phase_plane'] is not None else []))
@@ -119,6 +128,8 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
         if slice_index is not None:
             axial(ax,slice_index)
         ax.add_patch(Polygon(projected_polygon(box,axes),fill=False,ec='#555555',ls='--',lw=1.2,zorder=2))
+        if crop_box is not None:
+            ax.add_patch(Polygon(projected_polygon(crop_box,axes),fill=False,ec='green',lw=1.5,zorder=3))
         ax.plot(center[axes[0]],center[axes[1]],'+',color='#101010',ms=10,mew=2,zorder=5)
         for item in beams:
             color=colors((item['index']-1)%10)
@@ -151,6 +162,11 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
             for b in box[i+1:]:
                 if np.count_nonzero(np.abs(a-b)>1e-8)==1:
                     ax.plot(*np.vstack([a,b]).T,color='#555555',ls='--',lw=1)
+        if crop_box is not None:
+            for i,a in enumerate(crop_box):
+                for b in crop_box[i+1:]:
+                    if np.count_nonzero(np.abs(a-b)>1e-8)==1:
+                        ax.plot(*np.vstack([a,b]).T,color='green',lw=1.5)
         ax.scatter(*center,color='black',marker='+',s=65)
         for item in scene['beams']:
             color=colors((item['index']-1)%10)
@@ -171,14 +187,16 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
         ax.view_init(elev=24,azim=-55)
 
     def footer(fig):
-        fig.text(.5,.015,'Fixed DICOM LPS coordinates. Geometry projections are not slice intersections. '
-                 'CT box is the transport boundary; it is not the patient surface.',ha='center',fontsize=9)
+        fig.text(.5,.015,'Green box: retained transport CT (when cropped). Gray: original CT. Fixed DICOM LPS. Projections are not slice intersections. '
+                 'Boxes are not patient surfaces.',ha='center',fontsize=9)
 
-    legend=[Line2D([],[],color='#555555',ls='--',label='CT transport boundary'),
+    legend=[Line2D([],[],color='#555555',ls='--',label='Original CT boundary' if crop_box is not None else 'CT transport boundary'),
             Line2D([],[],color='black',marker='+',ls='',label='CT center'),
             Line2D([],[],color='black',marker='o',mfc='none',ls='',label='Isocenter'),
             Line2D([],[],color='#45d8ad',label='BODY / EXTERNAL'),
             Line2D([],[],color='#ef3395',label='Selected target')]
+    if crop_box is not None:
+        legend.append(Line2D([],[],color='green',label='Retained transport boundary'))
     if any(item['phase_plane'] is not None for item in scene['beams']):
         legend.append(Line2D([],[],color='#962cb1',ls=':',label='Phase-space plane'))
         legend.append(Line2D([],[],color='black',marker='*',ls='',label='Nominal focal point'))
@@ -229,7 +247,9 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                     _, aperture, _, _ = head.resolved(beam)
                     if aperture:
                         pitches = aperture.entrance_slit_ctcs
-                        lines.append(f"Slits: width {min(aperture.entrance_slit_widths):g} mm; nominal CTC {aperture.nominal_entrance_ctc_mm:g} mm; shift +X {aperture.lateral_shift_mm:g} mm")
+                        lines.append(f"Slits: width {min(aperture.entrance_slit_widths):g} mm; nominal CTC {aperture.nominal_entrance_ctc_mm:g} mm; shift across slits {aperture.lateral_shift_mm:g} mm")
+                        lines.append(f"TOPAS aperture rotation X/Y/Z: {aperture.collimator_rotation_x:g}/{aperture.collimator_rotation_y:g}/{aperture.collimator_rotation_z:g} deg")
+                        lines.append("Translation in beam frame (mm): " + ", ".join(f"{v:.3f}" for v in aperture.translation_beam_mm))
                         if pitches: lines.append(f"Actual entrance pitch: {min(pitches):.6f} to {max(pitches):.6f} mm (rigid translation, no refocusing)")
                 else:lines.append('No configured treatment head shown; custom geometry is not rendered.')
                 ax.text(0,1,'\n'.join(lines),va='top',fontsize=9,linespacing=1.25)
@@ -247,7 +267,8 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                         lines.append('')
                     for start in range(0,len(lines),32):
                         fig,ax=plt.subplots(figsize=(14,10));ax.axis('off')
-                        fig.suptitle(f"Beam {item['index']} | collision diagnostics - preparation blocked",fontsize=16)
+                        outcome = "intersections found" if any(h["intersects"] for k in ("envelopes", "material_solids") for h in record[k]) else "no intersections"
+                        fig.suptitle(f"Beam {item['index']} | collision diagnostics - {outcome}",fontsize=16)
                         ax.text(0,1,'\n'.join(lines[start:start+32]),va='top',fontsize=11,linespacing=1.5)
                         pdf.savefig(fig);plt.close(fig)
         temporary.replace(path)

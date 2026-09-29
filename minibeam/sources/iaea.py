@@ -41,6 +41,10 @@ def read_header(base):
     if sum(counts[k] for k in ('PHOTONS','ELECTRONS','POSITRONS'))!=counts['PARTICLES']:
         raise ValueError('IAEA species counts do not sum to particle count')
     return {'base':base,'header':header,'data':data,'plane_distance_mm':constants[0]*10,
+            'source_description': {name: ' '.join(' '.join(sections.get(name, [])).split()) for name in (
+                'COORDINATE_SYSTEM_DESCRIPTION', 'MACHINE_TYPE', 'MONTE_CARLO_CODE_VERSION',
+                'TRANSPORT_PARAMETERS', 'GLOBAL_PHOTON_ENERGY_CUTOFF', 'GLOBAL_PARTICLE_ENERGY_CUTOFF',
+                'VARIANCE_REDUCTION_TECHNIQUES', 'INITIAL_SOURCE_DESCRIPTION')},
             'counts':counts,'header_sha256':hashlib.sha256(raw).hexdigest()}
 
 
@@ -100,3 +104,20 @@ def write_topas_header(path, histories, reached, particles):
         f'Number of Original Histories that Reached Phase Space: {reached}\n'
         f'Number of Scored Particles: {particles}\n'
         f'Number of Bytes per Particle: {TOPAS_DTYPE.itemsize}\n')
+
+
+def validated_parts(infos, audits):
+    """Read distinct history batches in order, including unused suffix files."""
+    offset = 0
+    hashes = set()
+    for index, info in enumerate(infos):
+        audit = {}
+        for records, ids in validated_chunks(info, audit):
+            yield index, records, ids + offset
+        if audit['phsp_sha256'] in hashes:
+            raise ValueError('Duplicate phase-space particle-file content; distinct history batches are required')
+        hashes.add(audit['phsp_sha256'])
+        audit['history_offset'] = offset
+        audit['source_description'] = info['source_description']
+        audits.append(audit)
+        offset += info['counts']['ORIG_HISTORIES']

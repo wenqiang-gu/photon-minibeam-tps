@@ -22,7 +22,7 @@ The script has four stages:
 
 | Stage | What it does | Output |
 |---|---|---|
-| `inspect` | Native DICOM import; list original ROI names and numbers, and report omissions. | Printed CT/structure information. |
+| `inspect` | Native DICOM import; list original ROI names and numbers, and report omissions. | Printed CT/structure information; crop preview when configured. |
 | `prepare` | Generate native photon steering and TOPAS inputs. No simulation runs. | A portable bundle and `derived/steering.mat`. |
 | `collect` | Validate completed TOPAS CSV files and assemble a sparse influence matrix. | `derived/result.mat` with native planning objects and `dij`, plus variance data. |
 | `forward` | Stream completed beamlet doses with source-dependent exposure weights, without building a matrix. | `derived/dose.mha` and weighting metadata. |
@@ -73,7 +73,7 @@ is required to collect an existing result with this recognized warning.
 python patient_workflow.py inspect
 ```
 
-`inspect` always lists imported ROIs. With `TARGET` configured, it also prints steering and setup estimates without writing run files; set `TARGET = None` to list ROIs only.
+`inspect` always lists imported ROIs. With `TARGET` configured, it also prints steering and setup estimates without writing run files; set `TARGET = None` to skip steering. A configured crop also writes its diagnostic preview, even without a target.
 
 The supplied patient imports as 341 × 341 × 160 CT voxels and all 51 structures. Native pyRadPlan owns DICOM import and rasterization. Omitted ROIs are reported; original ROI numbers are retained in metadata.
 
@@ -119,19 +119,40 @@ Edit these settings in `patient_workflow.py` for a **new** run:
 
 ```python
 SOURCE_TYPE = "phase_space"
-PHASE_SPACE_FILE_BASE = "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1"
+PHASE_SPACE_FILE_BASES = [
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1",
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2",
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3",
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4",
+]
 HISTORIES_PER_JOB = 1_000_000
 ENABLE_OPENGL = False  # cluster batch execution
 ONLY_CENTRAL_BEAMLET = True
 ```
 
-Supply the common basename without `.header` or `.phsp`. The existing default remains `SOURCE_TYPE = "point"` and your history count is not automatically changed. Ten point-source histories are usually too few to select particles from a narrow phase-space bixel; start with one million **original accelerator histories**, then assess statistics. Empty selections stop preparation with an error. Collection and forward dose read the saved source settings.
+Supply ordered basenames without `.header` or `.phsp`. Your source choice and history count are not automatically changed. Ten point-source histories are usually too few to select particles from a narrow phase-space bixel; start with one million **original accelerator histories**, then assess statistics. Empty selections stop preparation with an error. Collection and forward dose read the saved source settings.
 
-This reader explicitly supports the supplied little-endian IAEA 33-byte layout with constant Z, signed particle/energy fields, history increments and LATCH. It validates the entire file in chunks, even when replaying a small prefix, and records original header/data hashes. Unsupported layouts, inconsistent counts, malformed records and requests exceeding the original-history count are rejected. The originals are never changed.
+This reader explicitly supports the supplied little-endian IAEA 33-byte layout with constant Z, signed particle/energy fields, history increments and LATCH. It validates every listed file in chunks, including unused suffix files, and records ordered original header/data hashes. Unsupported layouts, inconsistent counts, malformed records and requests exceeding the combined original-history count are rejected. The originals are never changed.
 
 Recorded photons, electrons and positrons retain their positions, directions, energies and statistical weights (approximately 0.05 in this file). The plane is **272.1 mm downstream of the nominal target**, placed using each beam’s fixed native gantry/couch frame. It is not aimed separately at each bixel, and neither the empirical spectrum nor the native nominal energy overrides recorded energies. In patient PDFs, the purple plane is the replay origin; stars mark the separate nominal focal points.
 
 Each downstream trajectory is projected to the beam’s isocenter plane and selected inside its native **square** bixel: lower edges are inclusive and upper edges exclusive. Non-overlapping squares partition trajectories deterministically. Multiple beamlets per ray and overlapping squares are rejected. Bixels outside recorded coverage fail when empty. Selection occurs before transport through downstream hardware; it is not a guarantee of transmitted field coverage.
+
+The files must contain **distinct original-history batches** with compatible source geometry,
+coordinate conventions, and source/transport descriptions. Shared-history particle splits
+are unsupported. Duplicate paths and identical particle-file hashes are rejected, but
+these checks cannot prove statistical independence. Incomplete downloads fail validation.
+
+`HISTORIES_PER_JOB` is the total across files, not a per-file budget. Files are consumed
+in list order: a 200-million-history job uses 170 million from part1 and 30 million
+from part2. The four supplied parts offer 680 million original histories under the
+distinct-batch requirement. A smaller budget may consume only part1. Preparation prints
+the allocation and records per-file available/consumed histories and particle selections.
+
+The source API accepts `PhaseSpaceBeamletSource(file_bases=[...])` and native plan
+configuration `{"type": "phase_space", "file_bases": [...]}`. Legacy singular `file_base`
+remains supported, but specifying both forms is rejected. Existing saved projects
+remain collectable without original files; use fresh projects for new preparation.
 
 `HISTORIES_PER_JOB` selects a prefix of complete original histories, including gaps and trailing empty histories. Selected particles from one original history remain grouped. TOPAS binary headers record the requested original-history total and the number of nonempty selected histories; `PhaseSpaceIncludeEmptyHistories` restores the difference as empty events at the end of replay. `PhaseSpaceMultipleUse = 1` forbids recycling. This preserves the dose/statistical denominator, while not preserving the original ordering of empty events. LATCH is audited as part of the original file but is not a transported particle property.
 
@@ -156,7 +177,7 @@ The script prints estimated workload sizes before writing files. For the full ta
 python patient_workflow.py prepare --project projects/patient-cluster-full
 ```
 
-**Collection uses saved settings, independently of current editable planning settings.** Prepare a new bundle when changing geometry, source, materials, settings, or engine implementation. The old patient-script flags `--smoke`, `--bundle`, `--dicom`, and `--histories` are removed. Only the stage and `--project` remain. The default project directory is `projects/patient` when the collimator is disabled or the shift array is empty; otherwise it is `projects/patient-slit-study`. Choose a fresh directory when settings or implementation change.
+**Collection uses saved settings, independently of current editable planning settings.** Prepare a new bundle when changing geometry, source, materials, settings, or engine implementation. The old patient-script flags `--smoke`, `--bundle`, `--dicom`, and `--histories` are removed. Only the stage and `--project` remain. The default project directory is `projects/patient` when the collimator is disabled or both rotation and shift arrays are empty; otherwise it is `projects/patient-slit-study`. Choose a fresh directory when settings or implementation change.
 
 ### Optional OpenGL visualization
 
@@ -270,7 +291,7 @@ Scripts use native `to_matrad()` serializers and `scipy.io.savemat`. Native conv
 `patient_workflow.py` groups editable settings by purpose, followed by shared planning helpers and four clearly labeled stage functions:
 
 - `inspect(project_dir)` lists structures and, when a target is selected, displays setup estimates without writing simulation inputs.
-- `prepare(project_dir)` imports the patient, generates native steering once, and prepares one run or the configured shift setups.
+- `prepare(project_dir)` imports the patient, generates native steering once, and prepares one run or the configured rotation/shift setups.
 - `collect(project_dir)` assembles dose matrices and reports from saved bundles.
 - `forward(project_dir)` applies `FORWARD_WEIGHT_PER_BIXEL` in saved column order and writes summed dose and reports.
 
@@ -414,10 +435,10 @@ ENABLE_COLLIMATOR = False
 COLLIMATOR_SHIFT_FRACTIONS = [0.0, 0.25, 0.50, 0.75]  # inactive until re-enabled
 ```
 
-Disabled runs write directly into `--project` (default `projects/patient`). Shift,
+Disabled runs write directly into `--project` (default `projects/patient`). Rotation, shift,
 slit-width and nominal-CTC overrides are ignored without validation, and the
 script prints that they are inactive. The MLC, jaws, source and steering remain
-controlled by their existing settings. Re-enabling restores the configured shifts.
+controlled by their existing settings. Re-enabling restores the configured rotations and shifts.
 
 `ENABLE_COLLIMATOR` must be a Boolean and overrides TOML's `aperture.enabled`
 without changing the file. Requesting a collimator when TOML's entire assembly
@@ -427,25 +448,37 @@ to native beams. Writers, collision checks, reports and MATLAB exports use these
 same authoritative snapshots. Disabled manifests record `aperture.enabled=false`
 and no resolved aperture; inactive shifts are not recorded as executed setups.
 
-When `ENABLE_COLLIMATOR = True` (the default), the array selects the layout below.
+When `ENABLE_COLLIMATOR = True`, rotation and shift arrays select the setups.
 The `--study` flag has been removed.
 
-| Array | Behavior | Default output root |
+```python
+COLLIMATOR_ROTATION_DEG = [0.0, 45.0, 90.0]
+COLLIMATOR_SHIFT_FRACTIONS = [0.0, 0.25, 0.50, 0.75]
+```
+
+This example produces **12 setups**, ordered by rotation first, then shift.
+Every setup contains all configured gantry/couch beams. Native steering is generated
+once and enriched with a separate resolved geometry snapshot for every setup;
+each beam carries one rotation/shift, not the whole array.
+
+| Rotation array | Shift array | Output layout |
 |---|---|---|
-| `[]` | One run directly in the root, using TOML geometry without slit overrides | `projects/patient` |
-| `[0.0]` | One explicitly unshifted collimator setup in `shift_000/` | `projects/patient-slit-study` |
-| `[0.0, 0.25, 0.50, 0.75]` | Four setups in the existing shift folders | `projects/patient-slit-study` |
+| `[]` | `[]` | One TOML-configured run directly in the project root |
+| `[0.0]` | `[]` | `rotation_000/`, retaining TOML slit dimensions and translation |
+| `[]` | `[0.0]` | `shift_000/`, retaining TOML orientation |
+| `[0.0, 45.0, 90.0]` | `[0.0, 0.25, 0.50, 0.75]` | `rotation_000_shift_000/` through `rotation_090_shift_075/` |
 
-The four-value array remains the default. Every setup uses the shared gantry/couch
-angles and **always honors `ONLY_CENTRAL_BEAMLET`**. Its default remains `True`, giving four
-central-bixel jobs per setup (16 jobs across four shifts). Set it to `False` for
-native target coverage. Steering is generated once and copied across shifts.
+Negative/decimal angles use names such as `rotation_m045` and `rotation_022p5`.
+An empty rotation array applies no rotation override. An empty shift array applies
+no slit-width, CTC, or translation overrides. Nonempty shifts apply
+`SLIT_ENTRANCE_WIDTH_MM`, `NOMINAL_ENTRANCE_CTC_MM`, and each translation.
+`GEOMETRY_CONFIG` supplies the base configuration in every case.
 
-When enabled, an empty array preserves the configured slit width, CTC and lateral shift from
-`GEOMETRY_CONFIG`; it does not apply the script's slit overrides. A nonempty array
-applies `SLIT_ENTRANCE_WIDTH_MM`, `NOMINAL_ENTRANCE_CTC_MM`, and each translation.
-Thus `[]` and `[0.0]` intentionally differ. `GEOMETRY_CONFIG` selects the base TOML
-in both cases.
+The previous scalar rotation is migrated to a singleton array preserving its value.
+Every setup honors `ONLY_CENTRAL_BEAMLET` and `BEAMLET_EXECUTION`. When either enabled
+array is nonempty the default root is `projects/patient-slit-study`; otherwise it is
+`projects/patient`. Disabling the collimator ignores both arrays and all slit overrides.
+Use a fresh project for new settings. Existing shift-only studies remain collectable.
 
 `inspect` always lists ROIs. When a target is configured it also generates native
 steering and prints setup/output estimates; otherwise it finishes after the list.
@@ -465,8 +498,8 @@ Reproducing the earlier 278-job-per-setup study for a new preparation requires
 `ONLY_CENTRAL_BEAMLET = False`. Existing schema-2 runs remain collectable after implementation changes.
 
 Edit the study constants in the COLLIMATOR SETUPS section of `patient_workflow.py` for slit entrance
-width, nominal entrance CTC, and `COLLIMATOR_SHIFT_FRACTIONS`; beam angles use the shared planning settings.
-`COLLIMATOR_SHIFT_FRACTIONS` translates only the slit collimator along beam-frame X,
+width, nominal entrance CTC, `COLLIMATOR_ROTATION_DEG`, and `COLLIMATOR_SHIFT_FRACTIONS`; beam angles use the shared planning settings.
+`COLLIMATOR_SHIFT_FRACTIONS` translates only the slit collimator across its rotated slits,
 as fractions of `NOMINAL_ENTRANCE_CTC_MM`. The MLC and jaws stay fixed. `GEOMETRY_CONFIG`
 selects the starting TOML; `None` uses `minibeam/geometry/config.toml`. Other
 hardware dimensions and positions come from that snapshot. These defaults use
@@ -474,7 +507,9 @@ hardware dimensions and positions come from that snapshot. These defaults use
 is **nominal**: constant blade thickness normal to each focused blade produces
 slightly varying entrance pitches, recorded explicitly in the outputs.
 
-| Setup directory | Fraction of nominal CTC | Rigid translation along beam X |
+For rotation-free overrides (`COLLIMATOR_ROTATION_DEG = []`), shift directory names remain:
+
+| Setup directory | Fraction of nominal CTC | Rigid translation across rotated slits |
 |---|---:|---:|
 | `shift_000` | 0% | 0 mm |
 | `shift_025` | 25% | 1.5 mm |
@@ -650,3 +685,126 @@ New default outputs go into `projects/patient` or `projects/patient-slit-study`.
 Both `projects/` and legacy `runs/` are ignored by Git. Internal bundle metadata
 and shift folder names are unchanged. The water workflow retains `--bundle`
 and its `runs/water-cluster` default.
+
+### Patient slit-collimator rotation
+
+An entry of `0.0` in `COLLIMATOR_ROTATION_DEG` aligns slit length with the opposing MLC banks
+(beam X). An entry of `90.0` restores the original slit orientation (beam Y). These axis
+descriptions assume zero aperture X/Y tilt. The entire frame and blade assembly
+rotates about its center first, then translates along its rotated spacing axis:
+positive shifts point along beam +Y at 0° and beam +X at 90°. MLC, jaws, source,
+and steering do not rotate with this setting.
+
+The patient setting overrides TOML `aperture.rotation_z_deg` using the TOPAS
+placement angle `rotation_entry - 90`; existing X/Y tilts are retained.
+With tilts, shifts follow the full rotated 3D spacing axis. Disabled collimators
+ignore this setting. Resolved snapshots include rotation matrices and beam-frame
+translation vectors. Missing TOML Z rotation defaults to zero; shared TOML defaults
+and the water script are unchanged. Prepare a fresh project after this change;
+collection and forward reconstruction of existing projects use saved settings.
+
+### Optional CT transport cropping and finer dose bins
+
+`patient_workflow.py` now exposes `CT_CROP_VOXELS = None`. The default retains the
+whole CT. To crop explicitly, provide all three original CT ranges, for example
+`{"x": (40, 300), "y": (30, 290), "z": (0, 160)}`. These are **XYZ, zero-based,
+stop-exclusive** indices, not MATLAB indices. This is an illustrative range,
+not an approved crop for the supplied patient. Original DICOM files, planning
+CT, structures, steering, and hardware coordinates remain unchanged.
+
+By default, preparation rejects removal of any structure voxel, HU above -950, enclosed
+planar tissue/support regions, or air not connected to the CT boundary. This is
+a conservative external-air test, not a validated anatomical segmentation.
+Review the geometry report; preserving all structures/support may leave no
+useful crop. Hardware overlap checks still apply to the retained rectangular
+transport box. Green outlines show the retained volume; gray PDF/cyan OpenGL
+outlines show the full original CT. No crop is silently adjusted to clear hardware.
+
+`DOSE_SPACING_MM` remains independent: `None` uses CT voxel spacing;
+`(0.5, 0.5, 0.5)` requests finer scoring. Whole bins fit the retained physical
+extent, so actual spacing can be slightly smaller than requested. Preparation
+reports the actual spacing. Finer bins do not add anatomical detail, and increase
+output size and statistical noise per bin. The current pyRadPlan 0.5.0 MATLAB
+export still requires square transverse CT and dose dimensions; unsupported
+rectangular crops fail before simulation inputs are written.
+
+The manifest stores `ct_grid`, `transport_grid`, `dose_grid`, and `crop_metadata`.
+Both planning and collected MATLAB snapshots contain `crop_metadata`. `ct` and
+`cst` always describe the original planning CT; `dij.doseGrid` describes the
+scoring grid. Matrix rows cover **only** dose bins inside that grid. Excluded CT
+voxels have no rows; sparse zero entries inside the grid still have logical rows.
+`minibeam.geometry.cropping.map_structure_mask(mask, dose_grid)` maps a native
+SimpleITK ROI mask by nearest neighbor and reports original-voxel coverage.
+
+Forward reconstruction writes `dose_scoring_grid.mha` at scored resolution,
+`dose.mha` resampled to the original CT for viewing, and `dose_coverage.mha`.
+Coverage is 1 where the CT voxel center lies inside the scored extent and 0
+outside. Zero fill outside coverage is **unscored**, not measured zero dose;
+beam projections exclude uncovered space. Statistical errors remain on the
+scoring grid. See `derived/indexing.md` for each project's actual grids/ranges.
+Saved collection needs neither original DICOM nor current crop settings.
+Use a fresh project for cropped simulations; old projects and the water workflow
+retain their saved behavior.
+
+### Unified crop protection and ROI reports
+
+`ENFORCE_CT_CROP_PROTECTION` controls ROI and material protection together:
+
+```python
+# True: reject clipping any ROI or material flagged by the air checks.
+# False: allow non-target ROI/material clipping; still report all findings.
+# Selected targets remain protected in both modes.
+ENFORCE_CT_CROP_PROTECTION = False
+```
+
+The patient script preserves the user's previous False setting; the engine
+default is True. Boolean values are required. Invalid crop/grid settings and
+hardware collisions always remain blocking. Original CT and cst stay unchanged;
+removed portions of structures are unscored, not measured zero dose.
+
+For each clipped ROI, inspection/preparation prints its exact name, removed and
+original voxel counts, percentage, partial/complete clipping, and whether the
+finding blocks preparation or is bypassed. Material classification covers the
+**entire excluded region**, with no ROI-mask exemptions.
+
+With a crop configured, `inspect` and `prepare` write a diagnostic-only sibling
+folder `<project-name>-crop-preview/` containing `crop_preview.png` and
+`clipping_summary.json`, even when validation fails. The top row shows reference
+CT slices: red clipped ROI regions/contours, cyan targets, yellow HU > -950 flags,
+and magenta low-HU enclosure/connectivity flags. Green marks retained bounds;
+neutral shading marks excluded space. The bottom row projects masks through all
+depths without a CT background. Red overlays magenta, which overlays yellow.
+Flags stay visible when protection is bypassed; selected-target clipping always
+blocks. Categories may overlap, so their counts must not be blindly added.
+
+New manifests and MATLAB crop metadata record the versioned policy
+`unified_target_protected_v1`, `enforce_protection`, findings, and ROI clipping
+records. After collect or forward, `derived/indexing.md` includes a clipped-ROI
+table and identifies incomplete dose-grid coverage. Saved collection uses the
+saved policy, independently of current settings and original inputs.
+
+The former `CT_CROP_ALLOW_CLIPPING_ROIS` and
+`ENFORCE_CT_CROP_MATERIAL_CHECK` settings are removed from preparation. Engine
+options `ct_crop_allow_clipping_rois` and `enforce_ct_crop_material_check` produce
+migration guidance; use `enforce_ct_crop_protection`. Legacy saved projects still
+retain their original allowed-ROI and material-only enforcement semantics in
+reports. They are not reinterpreted as unified bypasses. Use a fresh project for
+new preparation because the policy participates in configuration fingerprints.
+
+### MATLAB example for optimization development
+
+Share `derived/result.mat`, `derived/metadata.json`, and `derived/indexing.md`
+with the utilities in [`matlab/`](matlab/README.md). The minimal
+`dose_optimization_example` loads the sparse matrix and finds an ROI by exact name.
+`roi_on_dose_grid` maps the original `cst` mask onto the scoring grid using physical
+coordinates, including cropped and finer grids, and reports incomplete ROI coverage.
+The matrix stays at scoring resolution. See the MATLAB guide for copyable usage,
+source-exposure units, and the limitation of combined-beam columns for fluence
+optimization. Run `test_roi_on_dose_grid` in MATLAB to check the synthetic examples.
+
+For a visual MATLAB check, use `visualize_dose_check('derived/result.mat',
+'PTV2017fw')` after adding `matlab/` to the MATLAB path. It overlays dose and
+original/mapped ROI contours on three physical-coordinate CT slices, retains the
+full CT extent and marks the scoring boundary. It supports separate and combined
+columns, optional exposure weights, a reference position, and PNG export. See
+[`matlab/README.md`](matlab/README.md) for examples and interpretation.

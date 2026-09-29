@@ -3,8 +3,35 @@ import numpy as np
 from ..geometry.coordinates import grid_dict, scoring_grid
 
 
-def validate_request(manifest, ct, stf, dose_spacing_mm=None):
-    if grid_dict(ct.grid) != manifest['ct_grid'] or grid_dict(scoring_grid(ct, dose_spacing_mm)) != manifest['dose_grid']:
+def validate_request(manifest, ct, stf, dose_spacing_mm=None, ct_crop_voxels=None, cst=None, enforce_protection=True):
+    from ..geometry.cropping import resolve_grids
+    saved_crop = manifest.get('crop_metadata', {})
+    if saved_crop.get('protection_policy') == 'unified_target_protected_v1':
+        if enforce_protection != saved_crop['enforce_protection']:
+            raise ValueError('Saved crop protection differs from native dose request')
+        transport, dose_grid, _ = resolve_grids(ct, ct_crop_voxels, dose_spacing_mm, cst, enforce_protection)
+    else:
+        # Legacy collection consumes its saved policy; never reinterpret its
+        # old material-only bypass as unified permission to clip ROIs.
+        from pyRadPlan.core import Grid
+        transport_grid = manifest.get('transport_grid', manifest['ct_grid'])
+        if ct_crop_voxels is not None:
+            if {a:list(ct_crop_voxels[a]) for a in 'xyz'} != saved_crop.get('retained_ranges'):
+                raise ValueError('Saved legacy crop differs from native dose request')
+        elif saved_crop.get('applied'):
+            raise ValueError('Saved legacy crop differs from native dose request')
+        from types import SimpleNamespace
+        transport = SimpleNamespace(grid=Grid.model_validate(transport_grid))
+        # Grid comparison only; source inputs and historical safety decisions
+        # are not recomputed when consuming completed legacy results.
+        transport.size = transport.grid.dimensions
+        transport.origin = transport.grid.origin
+        transport.num_of_ct_scen = 1
+        transport.direction = transport.grid.direction_vector
+        dose_grid = scoring_grid(transport, dose_spacing_mm)
+    if grid_dict(transport.grid) != manifest.get('transport_grid', manifest['ct_grid']):
+        raise ValueError('Saved transport crop differs from native dose request')
+    if grid_dict(ct.grid) != manifest['ct_grid'] or grid_dict(dose_grid) != manifest['dose_grid']:
         raise ValueError('Saved bundle grid differs from native dose request')
     if len(stf.beams) != len(manifest['planning']['beams']):
         raise ValueError('Saved bundle beam count differs from native dose request')

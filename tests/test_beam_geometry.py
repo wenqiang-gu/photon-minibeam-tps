@@ -86,11 +86,12 @@ def test_matrad_cache_collection_and_relocation(case,tmp_path):
 
 
 @pytest.mark.topas
-def test_shifted_local_transport(case,tmp_path):
+@pytest.mark.parametrize("rotation",[-90.,0.])
+def test_shifted_local_transport(case,tmp_path,rotation):
     executable=os.environ.get('PHOTON_TPS_TOPAS')
     if not executable:pytest.skip('Set PHOTON_TPS_TOPAS for local transport')
     ct,plan,cst,stf,_=case
-    stf=enrich_stf(stf,BeamGeometry.from_config().replace(aperture={'lateral_shift_mm':1.5}))
+    stf=enrich_stf(stf,BeamGeometry.from_config().replace(aperture={'lateral_shift_mm':1.5,'rotation_z_deg':rotation}))
     engine=TOPASPhotonEngine(plan,water=True,histories=2000)
     root=engine.prepare_jobs(ct,cst,stf,bundle_dir=tmp_path/'shifted')
     for job in load_manifest(root)['jobs']:
@@ -134,3 +135,53 @@ def test_nonzero_couch_shift_and_zero_legacy_parameters(case):
             delta=(points-points0)@beam_basis(beam).T
             expected=beam_basis(beam)[:,0]*3 if name.startswith(('Frame','Blade')) else np.zeros(3)
             np.testing.assert_allclose(delta,np.broadcast_to(expected,delta.shape),atol=1e-10)
+
+@pytest.mark.parametrize('angle',[0.,90.,37.,-25.])
+@pytest.mark.parametrize('shift',[0.,1.5,3.,4.5])
+def test_rotated_slit_transform(case,angle,shift):
+    from minibeam.workflow.geometry import resolve_geometry
+    from minibeam.geometry.spatial import placement_rotation
+    from minibeam.geometry.apertures.slits import SlitAperture
+    ct,plan,cst,_,_=case
+    plan.prop_stf.update(gantry_angles=[45.,135.,225.,315.],couch_angles=[0.,20.,0.,15.])
+    native=generate_stf(ct,cst,plan)
+    geo=resolve_geometry(config_path=None,enable_collimator=True,collimator_rotation_deg=angle)
+    stf=enrich_stf(native,geo.replace(aperture={'lateral_shift_mm':shift}))
+    base=enrich_stf(native,geo.replace(aperture={'rotation_z_deg':0.,'lateral_shift_mm':0.}))
+    head=TreatmentHead(None);rot=placement_rotation(z=angle-90)
+    for beam,old in zip(stf.beams,base.beams):
+        ap=head.resolved(beam)[1];ap0=head.resolved(old)[1]
+        np.testing.assert_allclose(ap.translation_beam_mm,rot[:,0]*shift,atol=1e-12)
+        assert ap.collimator_blades==ap0.collimator_blades
+        for (name,v),(_,v0) in zip(material_solids(head,beam),material_solids(head,old)):
+            expected=(v0-[0,0,ap0.collimator_center_z])@rot.T+ap.center_beam_mm if name.startswith(('Frame','Blade')) else v0
+            np.testing.assert_allclose(v,expected,atol=1e-10)
+            np.testing.assert_allclose(v@beam_basis(beam).T,expected@beam_basis(beam).T,atol=1e-10)
+        np.testing.assert_allclose(SlitAperture.envelope(ap)['center'],ap.center_beam_mm)
+        text=head.resolved(beam)[3]
+        assert f'd:Ge/Collimator/RotZ = {angle-90:.6f} deg' in text
+        for axis,value in zip('XYZ',ap.center_beam_mm):assert f'd:Ge/Collimator/Trans{axis} = {value:.6f} mm' in text
+        if angle==0:
+            np.testing.assert_allclose(rot[:,0],[0,1,0],atol=1e-12)
+            np.testing.assert_allclose(abs(rot[:,1]),[1,0,0],atol=1e-12)
+        if angle==90:np.testing.assert_allclose(rot,np.eye(3))
+
+
+def test_rotation_validation_tilts_and_exports(case):
+    from minibeam.workflow.geometry import resolve_geometry
+    from minibeam.geometry.spatial import placement_rotation
+    from minibeam.steering import beam_geometry_records
+    for invalid in [True,None,'90',float('inf'),float('nan')]:
+        with pytest.raises(ValueError):resolve_geometry(config_path=None,enable_collimator=True,collimator_rotation_deg=invalid)
+        assert not resolve_geometry(config_path=None,enable_collimator=False,collimator_rotation_deg=invalid).aperture.enabled
+    _,_,_,native,_=case
+    geo=resolve_geometry(config_path=None,enable_collimator=True,collimator_rotation_deg=37.)
+    geo=geo.replace(aperture={'rotation_x_deg':2.,'rotation_y_deg':3.,'lateral_shift_mm':3.})
+    stf=enrich_stf(native,geo);ap=TreatmentHead(None).resolved(stf.beams[0])[1]
+    rot=placement_rotation(2,3,-53)
+    np.testing.assert_allclose(ap.translation_beam_mm,rot[:,0]*3)
+    record=beam_geometry_records(stf)[0]
+    assert record['resolved']['aperture']['rotation_matrix']==ap.rotation_matrix
+    assert record['resolved']['aperture']['translation_beam_mm']==ap.translation_beam_mm
+    other=enrich_stf(native,geo.replace(aperture={'rotation_z_deg':0.}))
+    assert record['configuration_sha256']!=beam_geometry_records(other)[0]['configuration_sha256']

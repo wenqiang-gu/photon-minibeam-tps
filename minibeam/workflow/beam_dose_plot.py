@@ -64,15 +64,18 @@ def bixel_centers(snapshot, manifest, beam_index, basis):
 
 def project_beam(ct, masks, dose, parameters):
     ref, center, basis = beam_display_grid(ct, parameters)
+    from ..geometry.cropping import coverage_image
+    coverage = sitk.GetArrayFromImage(coverage_image(dose, ref)) > 0
     # Match the existing forward CT-grid resampling convention for coarse scores.
     if (dose.GetSize(), dose.GetOrigin(), dose.GetSpacing(), dose.GetDirection()) != (
             ct.GetSize(), ct.GetOrigin(), ct.GetSpacing(), ct.GetDirection()):
         dose = sitk.Resample(dose, ct, sitk.Transform(), sitk.sitkLinear, 0., sitk.sitkFloat64)
     rotated = sitk.Resample(dose, ref, sitk.Transform(), sitk.sitkLinear, 0., sitk.sitkFloat64)
-    values = sitk.GetArrayViewFromImage(rotated)
+    values = sitk.GetArrayFromImage(rotated)
     if not np.isfinite(values).all() or np.any(values < 0):
         raise ValueError('Beam plot requires finite nonnegative dose')
     occupied = np.zeros(ref.GetSize()[2], dtype=bool)
+    values[~coverage] = 0.0  # Excluded space cannot contribute to a dose projection.
     outlines = {}
     for name, mask in masks.items():
         transformed = sitk.Resample(mask, ref, sitk.Transform(), sitk.sitkNearestNeighbor, 0., sitk.sitkUInt8)
@@ -99,7 +102,7 @@ def project_beam(ct, masks, dose, parameters):
                 fallback=None if rows.size else 'No nonempty target in beam frame; using full depth')
     return dict(dose=projected, ct=sitk.GetArrayFromImage(anatomy)[0], outlines=outlines,
                 center=center, spacing=spacing,
-                record=dict(depth_slab=slab, reference_slice_depth_mm=float(center[2]+mid*spacing),
+                record=dict(coverage='Projection excludes points outside saved dose-grid extent', depth_slab=slab, reference_slice_depth_mm=float(center[2]+mid*spacing),
                     display_grid=dict(dimensions=list(ref.GetSize()), spacing_mm=list(ref.GetSpacing()),
                                       origin_lps_mm=list(ref.GetOrigin()), axes_lps=basis.tolist()),
                     reference_isocenter_lps_mm=parameters['iso_center']))

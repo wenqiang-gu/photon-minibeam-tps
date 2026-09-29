@@ -177,7 +177,7 @@ def test_topas_replay(case,phase_base):
 
 
 def test_trajectory_projection_and_history_reconstruction(case,tmp_path,monkeypatch):
-    import minibeam.sources.phase_space as module
+    import minibeam.sources.iaea as module
     # History 1 starts with an excluded photon; its selected electron must become
     # a new TOPAS event. The forward tilted photon lands outside the square.
     base=make_iaea(tmp_path/'directions',[(1,-1,1,0,0,0,.05,1,0),

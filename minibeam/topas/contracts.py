@@ -15,6 +15,8 @@ class RunSettings:
     seed: int = 12345
     num_threads: int = 1
     enable_opengl: bool = False
+    enforce_ct_crop_protection: bool = True
+    ct_crop_voxels: dict | None = None
     dose_spacing_mm: tuple | None = None
     material_file: str | None = None
     dicom_dir: str | None = None

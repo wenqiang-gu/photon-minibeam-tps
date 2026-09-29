@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 import numpy as np
-from .iaea import read_header, validated_chunks, TOPAS_DTYPE, write_topas_header
+from .iaea import read_header, validated_parts, TOPAS_DTYPE, write_topas_header
 from ..geometry.spatial import beam_basis
 from ..geometry.coordinates import topas_angles
 from ..topas.contracts import ParameterFragment, SourceDescription
@@ -10,8 +10,17 @@ from ..topas.manifest import digest_json
 
 
 class PhaseSpaceBeamletSource:
-    def __init__(self, file_base):
-        self.file_base=str(Path(file_base).expanduser())
+    def __init__(self, file_base=None, *, file_bases=None):
+        if file_base is not None and file_bases is not None:
+            raise ValueError('Specify file_base or file_bases, not both')
+        values = [file_base] if file_bases is None else file_bases
+        if not isinstance(values, (list, tuple)) or not values or any(
+                not isinstance(v, (str, Path)) or not str(v).strip() for v in values):
+            raise ValueError('file_bases must be a nonempty ordered list of basenames')
+        self.file_bases = [str(Path(v).expanduser().resolve()) for v in values]
+        if len(set(self.file_bases)) != len(self.file_bases):
+            raise ValueError('Duplicate phase-space file paths')
+        self.file_base = self.file_bases[0]  # Legacy single-file attribute.
         self._temporary=None
         self.selections={}
         self.job_keys={}
@@ -24,9 +33,24 @@ class PhaseSpaceBeamletSource:
         from .bixels import groups
         if not isinstance(histories,int) or isinstance(histories,bool) or not 2<=histories<=1_000_000_000:
             raise ValueError('Phase-space histories must be 2..1e9 original histories')
-        info=read_header(self.file_base)
-        if histories>info['counts']['ORIG_HISTORIES']:
-            raise ValueError('Requested histories exceed the phase-space file; particle recycling is disabled')
+        infos = [read_header(base) for base in self.file_bases]
+        info = infos[0]
+        for part in infos[1:]:
+            if (part['plane_distance_mm'] != info['plane_distance_mm'] or
+                    part['source_description'] != info['source_description']):
+                raise ValueError('Incompatible phase-space source plane or source/transport descriptions')
+        available = sum(p['counts']['ORIG_HISTORIES'] for p in infos)
+        if histories > available:
+            raise ValueError('Requested histories exceed the phase-space files; particle recycling is disabled')
+        allocation = []
+        remaining = histories
+        for part in infos:
+            used = min(remaining, part['counts']['ORIG_HISTORIES'])
+            allocation.append(used)
+            remaining -= used
+        print(f'Phase space: {available:,} available original histories across {len(infos)} distinct batches; {histories:,} requested per job.')
+        for part, used in zip(infos, allocation):
+            print(f"  {part['base'].name}: {used:,} / {part['counts']['ORIG_HISTORIES']:,} histories")
         selections={};job_keys={};job=0
         for members in groups(stf, execution):
             squares = [m['selection'] for m in members]
@@ -40,17 +64,22 @@ class PhaseSpaceBeamletSource:
         self._temporary=tempfile.TemporaryDirectory(prefix='minibeam-phase-space-')
         directory=Path(self._temporary.name)
         states={key:{'selection':item,'last_history':0,'particles':0,'reached':0,
+                     'selected_per_file':np.zeros(len(infos),dtype=np.int64),
                      'member_counts':np.zeros(len(item.get('squares',[item])),dtype=np.int64),
                      'species':np.zeros(3,dtype=np.int64),'bounds':np.array([[np.inf,np.inf],[-np.inf,-np.inf]])}
                 for key,item in selections.items()}
-        audit={};prefix_particles=backward=0
-        print(f'Phase space: validating original file and selecting {len(states)} unique square selections/unions for {job} jobs; '
+        audits=[];prefix_particles=backward=0
+        prefix_per_file=np.zeros(len(infos),dtype=np.int64)
+        backward_per_file=np.zeros(len(infos),dtype=np.int64)
+        print(f'Phase space: validating original files and selecting {len(states)} unique square selections/unions for {job} jobs; '
               f'{histories:,} original histories per job, no recycling.')
-        for a,ids in validated_chunks(info,audit):
+        for file_index,a,ids in validated_parts(infos,audits):
             prefix=ids<=histories
             prefix_particles+=int(prefix.sum())
+            prefix_per_file[file_index]+=int(prefix.sum())
             forward=(a['code']>0)&(a['u'].astype(float)**2+a['v'].astype(float)**2<1)
             backward+=int((prefix & ~forward).sum())
+            backward_per_file[file_index]+=int((prefix & ~forward).sum())
             use=prefix & forward
             if not use.any():continue
             a=a[use];ids=ids[use]
@@ -68,6 +97,7 @@ class PhaseSpaceBeamletSource:
                     state['member_counts'][i] += int(mask.sum())
                     selected |= mask
                 rows=a[selected];history_ids=ids[selected]
+                state['selected_per_file'][file_index]+=len(rows)
                 if not len(rows):continue
                 new=np.r_[history_ids[0]!=state['last_history'],history_ids[1:]!=history_ids[:-1]]
                 out=np.zeros(len(rows),dtype=TOPAS_DTYPE)
@@ -80,6 +110,11 @@ class PhaseSpaceBeamletSource:
                 for code in (1,2,3):state['species'][code-1]+=int((rows['code']==code).sum())
                 state['bounds'][0]=np.minimum(state['bounds'][0],[rows['x'].min()*10,rows['y'].min()*10])
                 state['bounds'][1]=np.maximum(state['bounds'][1],[rows['x'].max()*10,rows['y'].max()*10])
+        for i,audit in enumerate(audits):
+            audit.update(consumed_original_histories=allocation[i], prefix_particles=int(prefix_per_file[i]),
+                         excluded_backward_or_tangent_particles=int(backward_per_file[i]))
+        bounds=np.asarray([a['xy_bounds_mm'] for a in audits])
+        audit=dict(xy_bounds_mm=[bounds[:,0].min(axis=0).tolist(),bounds[:,1].max(axis=0).tolist()])
         for key,state in states.items():
             if state['particles']==0 or np.any(state['member_counts']==0):
                 raise ValueError(f"Phase-space bixel at {state['selection']} selects no particles; "
@@ -93,7 +128,12 @@ class PhaseSpaceBeamletSource:
                 'excluded_particles':prefix_particles-state['particles'],
                 'excluded_backward_or_tangent_particles':backward,
                 'selected_species_counts':dict(zip(('photons','electrons','positrons'),map(int,state['species']))),
-                'selected_xy_bounds_mm':state['bounds'].tolist(),'original_file':audit,
+                'selected_xy_bounds_mm':state['bounds'].tolist(),
+                **({'original_file':audits[0]} if len(audits)==1 else {}),
+                'original_files':[dict(a, selected_particles=int(state['selected_per_file'][i]),
+                    excluded_particles=int(prefix_per_file[i]-state['selected_per_file'][i])) for i,a in enumerate(audits)],
+                'available_original_histories':available,
+                'history_allocation':'sequential prefix of distinct original-history batches',
                 'recycling':False,'cross_column_covariance':'not estimated; shared original histories'}
         self.selections=states;self.job_keys=job_keys;self.audit=audit;self.info=info
 

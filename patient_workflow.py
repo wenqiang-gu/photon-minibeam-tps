@@ -24,7 +24,7 @@ from minibeam.geometry.assembly import GeometryCollisionError
 from minibeam.geometry.coordinates import scoring_grid
 from minibeam.workflow.patient import read_roi_metadata, select_target
 from minibeam.workflow.execution import run_stage
-from minibeam.workflow.study import run_study, effective_shift_fractions
+from minibeam.workflow.study import run_study, effective_shift_fractions, effective_rotations
 from minibeam.workflow.geometry import resolve_geometry
 from minibeam.steering import enrich_stf
 
@@ -43,31 +43,63 @@ COUCH_ANGLES = None  # zero for each gantry angle
 SAD_MM = 1000.0
 BIXEL_WIDTH_MM = 5.0
 ONLY_CENTRAL_BEAMLET = False  # False: all target-selected beamlets
-BEAMLET_EXECUTION = "combined"  # "separate" or "combined": one aggregate job per beam
+BEAMLET_EXECUTION = "separate"  # "separate" or "combined": one aggregate job per beam
 # Physical coordinates in mm: +x Left, +y Posterior, +z Superior.
 # None uses the selected target's centroid, not the center of the CT volume.
 ISO_CENTER_LPS_MM = None
 
 # Source and simulation statistics
 SOURCE_TYPE = "phase_space"  # "point" or "phase_space"
-PHASE_SPACE_FILE_BASE = "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1"
-# Photons for point; original accelerator histories for phase_space.
+# Ordered, distinct original-history batches; each basename has .header and .phsp.
+# Shared-history particle splits are unsupported. Validation cannot prove independence.
+PHASE_SPACE_FILE_BASES = [
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1",
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2",
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3",
+    "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4",
+]
+# Photons for point; total original histories across the ordered files for phase_space.
+# Consume part1 first, then later parts as needed; no recycling.
 # Try 1_000_000 for an initial phase-space validation run.
-HISTORIES_PER_JOB = 10_000_000
+HISTORIES_PER_JOB = 680_000_000
 
 # Hardware: disabling the collimator ignores all shift/slit overrides.
-ENABLE_COLLIMATOR = False  # overrides TOML aperture.enabled; MLC and jaws unchanged
+ENABLE_COLLIMATOR = True  # overrides TOML aperture.enabled; MLC and jaws unchanged
 GEOMETRY_CONFIG = None  # TOML path for every setup; None uses geometry/config.toml
-# When enabled, [] uses TOML aperture dimensions and placement.
-# Each shift contains all GANTRY_ANGLES / COUCH_ANGLES configured above.
+# Rotate only the slit collimator (frame and blades); MLC/jaws stay fixed.
+# With zero aperture X/Y tilt:
+#   0°: slit length along beam X, between the MLC banks.
+#  90°: original orientation, with slit length along beam Y.
+#
+# Rotate about the collimator center FIRST, then shift across the rotated slits.
+# Positive shift: beam +Y at 0°, beam +X at 90°.
+# Each rotation is combined with every shift; e.g. [0.0, 45.0, 90.0].
+# [] retains TOML orientation without a rotation override.
+COLLIMATOR_ROTATION_DEG = []
+# Empty shifts keep TOML slit dimensions/translation; rotation entries still apply.
+# Each rotation/shift setup contains all GANTRY_ANGLES / COUCH_ANGLES above.
 SLIT_ENTRANCE_WIDTH_MM = 2.0
 NOMINAL_ENTRANCE_CTC_MM = 6.0  # slit width + configured physical blade thickness
 # Slit collimator only; MLC and jaws remain fixed.
-# Fractions of NOMINAL_ENTRANCE_CTC_MM, translated along beam-frame X.
+# Shift distance = fraction × NOMINAL_ENTRANCE_CTC_MM.
+# Translation follows the rotated slit-spacing axis, across the slits.
 COLLIMATOR_SHIFT_FRACTIONS = [0.0, 0.25, 0.50, 0.75]
 
 # Scoring and visualization
-DOSE_SPACING_MM = None  # preserve the native CT scoring grid
+# Optional CT crop in original voxel indices, ordered X/Y/Z.
+# Uses Python indexing: ZERO-BASED, start INCLUDED, stop EXCLUDED.
+# Example: x=(40, 300) retains indices 40..299 (260 voxels).
+# Equivalent MATLAB indices and inclusive TOPAS limits: 41..300.
+# These indices are NOT DICOM InstanceNumber values.
+# CT_CROP_VOXELS = None retains the complete CT. Original DICOM files remain unchanged.
+CT_CROP_VOXELS = {"x": (60, 280), "y": (60, 280), "z": (0, 160)}
+# Syntax illustration only, NOT safe bounds for this patient: it cuts CouchSurface.
+# {"x": (40, 300), "y": (30, 290), "z": (0, 160)}
+# True: reject clipping any ROI or material flagged by the air checks.
+# False: allow non-target ROI/material clipping; still report all findings.
+# Selected targets remain protected in both modes.
+ENFORCE_CT_CROP_PROTECTION = False
+DOSE_SPACING_MM = None  # None -> preserve the native CT scoring grid; (1.0, 1.0, 0.5) -> request finer spacing
 ENABLE_OPENGL = False  # interactive TOPAS viewer; keep False for cluster batch jobs
 
 # Forward dose: scalar or vector in saved job order, using saved exposure units.
@@ -115,9 +147,12 @@ def configure_plan(*, project_dir):
         raise ValueError('SOURCE_TYPE must be point or phase_space')
     plan.prop_dose_calc['source_config'] = {'type': SOURCE_TYPE}
     if SOURCE_TYPE == 'phase_space':
-        plan.prop_dose_calc['source_config']['file_base'] = str(Path(PHASE_SPACE_FILE_BASE).expanduser())
+        plan.prop_dose_calc['source_config']['file_bases'] = PHASE_SPACE_FILE_BASES
     if not WATER:
         plan.prop_dose_calc["dicom_dir"] = str(DICOM_DIR)
+    plan.prop_dose_calc["enforce_ct_crop_protection"] = ENFORCE_CT_CROP_PROTECTION
+    if CT_CROP_VOXELS is not None:
+        plan.prop_dose_calc["ct_crop_voxels"] = CT_CROP_VOXELS
     if DOSE_SPACING_MM is not None:
         plan.prop_dose_calc["dose_spacing_mm"] = DOSE_SPACING_MM
     return plan
@@ -129,13 +164,14 @@ def planning_directory(project_dir):
     root = Path(project_dir).resolve()
     fractions = effective_shift_fractions(
         enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_SHIFT_FRACTIONS)
-    if not fractions.size and (root / "study.json").exists():
-        raise SystemExit("This is a study directory; restore its enabled collimator and shift settings or choose a new project directory")
-    if fractions.size and (root / "manifest.json").exists():
+    rotations = effective_rotations(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_ROTATION_DEG)
+    if not (fractions.size or rotations.size) and (root / "study.json").exists():
+        raise SystemExit("This is a study directory; restore its enabled collimator and rotation/shift settings or choose a new project directory")
+    if (fractions.size or rotations.size) and (root / "manifest.json").exists():
         raise SystemExit("This is a single-project directory; use its study parent or a new study root")
     print("Collimator: enabled" if ENABLE_COLLIMATOR else
-          "Collimator: disabled; collimator shifts and slit overrides are inactive")
-    return root, fractions
+          "Collimator: disabled; collimator rotations, shifts and slit overrides are inactive")
+    return root, fractions, rotations
 
 
 def import_patient():
@@ -150,7 +186,13 @@ def build_steering(ct, cst, project_dir):
     """Select the target and generate native steering once for all setups."""
     plan = configure_plan(project_dir=project_dir)
     select_target(cst, TARGET)
-    grid = scoring_grid(ct, DOSE_SPACING_MM)
+    from minibeam.workflow.crop_preview import preview_crop
+    try:
+        _, grid, crop = preview_crop(ct, cst, project_dir, CT_CROP_VOXELS, DOSE_SPACING_MM,
+                                     (TARGET,), ENFORCE_CT_CROP_PROTECTION)
+    except ValueError as error:
+        raise SystemExit(f"CT crop / dose-grid preparation stopped: {error}") from None
+    print(f"Transport crop: {crop['retained_ranges']}; dose spacing: {crop['actual_dose_spacing_mm']} mm")
     if ct.size[0] != ct.size[1] or grid.dimensions[0] != grid.dimensions[1]:
         raise ValueError("matRad export requires square transverse CT and dose grids with pyRadPlan 0.5.0")
     stf = generate_stf(ct, cst, plan)
@@ -163,15 +205,16 @@ def build_steering(ct, cst, project_dir):
     return plan, stf, grid
 
 
-def process_setups(stage, root, fractions, ct, cst, metadata):
+def process_setups(stage, root, fractions, rotations, ct, cst, metadata):
     """Inspect or prepare resolved hardware setups with shared native steering."""
     geometry = resolve_geometry(config_path=GEOMETRY_CONFIG, enable_collimator=ENABLE_COLLIMATOR)
     plan, stf, grid = build_steering(ct, cst, root)
     try:
-        if fractions.size:
+        if fractions.size or rotations.size:
             run_study(stage, root, ct, cst, plan, stf, metadata, target=TARGET,
                       slit_width_mm=SLIT_ENTRANCE_WIDTH_MM, nominal_ctc_mm=NOMINAL_ENTRANCE_CTC_MM,
                       collimator_shift_fractions=fractions.tolist(), geometry=geometry,
+                      collimator_rotations=rotations.tolist(),
                       weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
         else:
             stf = enrich_stf(stf, geometry)
@@ -189,21 +232,27 @@ def process_setups(stage, root, fractions, ct, cst, metadata):
 
 # INSPECT: list structures and optionally estimate the configured simulation.
 def inspect(project_dir):
-    """Read patient data and display estimates without creating run files."""
-    root, fractions = planning_directory(project_dir)
+    """List anatomy, preview a configured crop, and estimate without simulation inputs."""
+    root, fractions, rotations = planning_directory(project_dir)
     ct, cst, metadata = import_patient()
     for roi in metadata["original_dicom_rois"]:
         print(f"{roi['number']:3d}  {roi['name']}")
     if TARGET is not None:
-        process_setups("inspect", root, fractions, ct, cst, metadata)
+        process_setups("inspect", root, fractions, rotations, ct, cst, metadata)
+    elif CT_CROP_VOXELS is not None:
+        from minibeam.workflow.crop_preview import preview_crop
+        try:
+            preview_crop(ct, cst, root, CT_CROP_VOXELS, DOSE_SPACING_MM, enforce_protection=ENFORCE_CT_CROP_PROTECTION)
+        except ValueError as error:
+            raise SystemExit(f"CT crop preparation stopped: {error}") from None
 
 
 # PREPARE: create portable TOPAS inputs; execution happens on the cluster.
 def prepare(project_dir):
     """Import, plan, and write one run or the configured collimator setups."""
-    root, fractions = planning_directory(project_dir)
+    root, fractions, rotations = planning_directory(project_dir)
     ct, cst, metadata = import_patient()
-    process_setups("prepare", root, fractions, ct, cst, metadata)
+    process_setups("prepare", root, fractions, rotations, ct, cst, metadata)
 
 
 # COLLECT: assemble dose matrices from saved bundles and completed CSV outputs.
@@ -231,12 +280,12 @@ def parse_arguments(argv=None):
     """Choose the stage and output folder; patient settings live above."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("stage", choices=["inspect", "prepare", "collect", "forward"])
-    parser.add_argument("--project", dest="project_dir", help="project directory path: shift subfolders only when the collimator is enabled with nonempty shift fractions")
+    parser.add_argument("--project", dest="project_dir", help="project directory path: rotation/shift subfolders when enabled override arrays are nonempty")
     args = parser.parse_args(argv)
     if args.stage in {"collect", "forward"} and args.project_dir is None:
         parser.error("--project is required for collect and forward")
     if args.project_dir is None:
-        args.project_dir = "projects/patient-slit-study" if effective_shift_fractions(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_SHIFT_FRACTIONS).size else "projects/patient"
+        args.project_dir = "projects/patient-slit-study" if (effective_shift_fractions(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_SHIFT_FRACTIONS).size or effective_rotations(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_ROTATION_DEG).size) else "projects/patient"
     return args
 
 

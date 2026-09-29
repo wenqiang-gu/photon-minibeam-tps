@@ -69,7 +69,7 @@ def dicom_inputs(directory, ct):
     return files, info
 
 
-def patient_parameters(ct, *, water, num_threads, world_half, enable_opengl=False):
+def patient_parameters(ct, *, water, num_threads, world_half, enable_opengl=False, transport_ct=None, crop_metadata=None):
     extent = np.asarray(ct.size) * ct.grid.resolution_vector
     lines = ['includeFile = inputs/materials.txt', 's:Ge/World/Material = "G4_AIR"',
              's:Ge/Patient/Parent = "World"', 's:Ge/Patient/Material = "G4_WATER"',
@@ -114,6 +114,25 @@ def patient_parameters(ct, *, water, num_threads, world_half, enable_opengl=Fals
         if water:
             lines += [f'd:Ge/Patient/HL{axis} = {length/2:.12g} mm',
                       f'i:Ge/Patient/{axis}Bins = {n}']
+    if crop_metadata and crop_metadata['applied']:
+        from .coordinates import patient_center
+        offset = patient_center(transport_ct) - patient_center(ct)
+        for axis, shift in zip('XYZ', offset):
+            lines.remove(f'd:Ge/Patient/Trans{axis} = 0 mm')
+            lines.append(f'd:Ge/Patient/Trans{axis} = {shift:.12g} mm')
+            low, stop = crop_metadata['retained_ranges'][axis.lower()]
+            lines += [f'i:Ge/Patient/RestrictVoxels{axis}Min = {low+1}',
+                      f'i:Ge/Patient/RestrictVoxels{axis}Max = {stop}']
+        if enable_opengl:
+            lines += ['s:Ge/TransportOutline/Type = "TsBox"',
+                      's:Ge/TransportOutline/Parent = "World"',
+                      'b:Ge/TransportOutline/IsParallel = "True"',
+                      's:Ge/TransportOutline/ParallelWorldName = "TransportOutlineWorld"',
+                      's:Ge/TransportOutline/Color = "Green"',
+                      's:Ge/TransportOutline/DrawingStyle = "Wireframe"']
+            for axis, length, shift in zip('XYZ', np.asarray(transport_ct.size)*transport_ct.grid.resolution_vector, offset):
+                lines += [f'd:Ge/TransportOutline/HL{axis} = {length/2:.12g} mm',
+                          f'd:Ge/TransportOutline/Trans{axis} = {shift:.12g} mm']
     return "\n".join(lines) + "\n"
 
 

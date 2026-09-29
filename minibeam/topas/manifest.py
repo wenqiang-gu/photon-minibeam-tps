@@ -41,6 +41,8 @@ def load_manifest(root):
         expected_units = ('Gy/(photon per member bixel)', 'photons per member bixel')
     if (manifest.get('units'), manifest.get('weight_units')) != expected_units:
         raise ValueError('Dose units disagree with normalization')
+    from ..geometry.cropping import validate_saved_grids
+    validate_saved_grids(manifest)
     jobs = manifest["jobs"]
     if not jobs or [j["bixel_index"] for j in jobs] != list(range(1, len(jobs) + 1)):
         raise ValueError("Missing, duplicate or reordered beamlet identities")

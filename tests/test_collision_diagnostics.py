@@ -118,6 +118,7 @@ def test_patient_cli_explains_collision_without_traceback(case,tmp_path,monkeypa
     import patient_workflow as workflow
     ct,_,cst,_,_=case
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',[])
+    monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[])
     monkeypatch.setattr(workflow,'parse_arguments',lambda argv=None: Namespace(stage='prepare',project_dir=str(tmp_path/'patient')))
     monkeypatch.setattr(workflow,'load_patient',lambda _: (ct,cst))
     monkeypatch.setattr(workflow,'read_roi_metadata',lambda *_: {'omitted_rois': []})

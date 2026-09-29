@@ -26,9 +26,14 @@ class JobWriter:
         self._plan_info = plan_info
         self.geometry_snapshot = geometry_snapshot
 
-    def _definition(self, ct, stf):
+    def _definition(self, ct, stf, resolved_grids=None):
         center = patient_center(ct)
-        dose_grid = scoring_grid(ct, self.dose_spacing_mm)
+        from ..geometry.cropping import resolve_grids
+        transport, dose_grid, crop = resolved_grids if resolved_grids is not None else resolve_grids(ct, self.ct_crop_voxels, self.dose_spacing_mm, enforce_protection=self.enforce_ct_crop_protection)
+        if crop["applied"] and (dose_grid.dimensions[0] != dose_grid.dimensions[1] or ct.size[0] != ct.size[1]):
+            raise ValueError("matRad export requires square transverse CT and dose grids")
+        if self.water and self.ct_crop_voxels is not None:
+            raise ValueError("CT cropping is supported only for DICOM patients")
         if any(b.radiation_mode != "photons" for b in stf.beams):
             raise ValueError("Only photon steering is supported")
         if not stf.total_number_of_bixels:
@@ -74,6 +79,7 @@ class JobWriter:
         if self.beamlet_execution == 'combined' and not builtin:
             raise ValueError('Combined mode requires a square point or phase-space source')
         job_count = len(grouped) if builtin else stf.total_number_of_bixels
+        print(f"Dose spacing requested: {self.dose_spacing_mm or 'native CT'}; actual XYZ: {dose_grid.resolution_vector.tolist()} mm")
         nvox = int(np.prod(dose_grid.dimensions))
         print(f"TOPAS: {job_count} {self.beamlet_execution} jobs, {nvox:,} dose voxels; "
               f"dense matrix {nvox*job_count*8/1024**3:.3f} GiB, "
@@ -84,13 +90,13 @@ class JobWriter:
             # Reject physical placement errors before scanning a potentially large file.
             for bi, beam in enumerate(stf.beams,1):
                 for device in self.devices:
-                    if hasattr(device,'validate_patient'): device.validate_patient(ct,beam,bi)
+                    if hasattr(device,'validate_patient'): device.validate_patient(transport,beam,bi)
             self.source_model.prepare(stf, self.histories, execution=self.beamlet_execution, seed=self.seed, patient_center=center)
         native_index = 0
         for bi, beam in enumerate(stf.beams, 1):
             for device in self.devices:
                 if hasattr(device, "validate_patient"):
-                    device.validate_patient(ct, beam, bi)
+                    device.validate_patient(transport, beam, bi)
             for ri, ray in enumerate(beam.rays, 1):
                 for li, bixel in enumerate(ray.beamlets, 1):
                     if getattr(bixel, "is_field_based", False):
@@ -162,6 +168,7 @@ class JobWriter:
             "implementation_sha256": implementation_hashes(),
             "ct_grid": grid_dict(ct.grid), "ct_hu_sha256": hashlib.sha256(raw.tobytes()).hexdigest(),
             "dicom": dicom_info, "hu_range": [float(raw.min()), float(raw.max())],
+            "transport_grid": grid_dict(transport.grid), "crop_metadata": crop,
             "dose_grid": grid_dict(dose_grid), "jobs": jobs, "sources": sources,
             "material_sha256": hashlib.sha256(material).hexdigest(), "water": self.water,
             "geometry_text": self.geometry.text,
@@ -175,14 +182,17 @@ class JobWriter:
         """Write a portable bundle, or validate/reuse an identical existing one."""
         if cst.ct_image.grid != ct.grid:
             raise ValueError("Structure set and CT grids differ")
+        from ..geometry.cropping import resolve_grids
+        resolved = resolve_grids(ct, self.ct_crop_voxels, self.dose_spacing_mm, cst, self.enforce_ct_crop_protection)
+        transport, _, crop = resolved
         from ..geometry.assembly import GeometryCollisionError, TreatmentHead
         try:
-            definition, dicom_files, material, assets, center = self._definition(ct, stf)
+            definition, dicom_files, material, assets, center = self._definition(ct, stf, resolved)
         except GeometryCollisionError as error:
             from ..geometry.diagnostics import write_collision_diagnostics
             head = next(d for d in self.devices if isinstance(d, TreatmentHead))
             output = write_collision_diagnostics(ct, cst, stf, head, bundle_dir or self.bundle_dir,
-                                                 patient_report=not self.water)
+                                                 patient_report=not self.water, transport_ct=transport)
             conflict = GeometryCollisionError(
                 f'{error}\nNo simulation bundle was written. Patient diagnostics:\n'
                 f'  Report: {output / "geometry.pdf"}\n'
@@ -229,7 +239,8 @@ class JobWriter:
                 raise ValueError("Asset changed during preparation; prepare a new bundle")
         (root / "inputs/devices.txt").write_text("includeFile = inputs/common.txt\n" + self.geometry.text + "\n")
         common = patient_parameters(ct, water=self.water, num_threads=self.num_threads,
-                                    world_half=definition["world_half_mm"], enable_opengl=self.enable_opengl)
+                                    world_half=definition["world_half_mm"], enable_opengl=self.enable_opengl,
+                                    transport_ct=transport, crop_metadata=crop)
         (root / "inputs/common.txt").write_text(common)
         for job, source in zip(jobs, definition["sources"]):
             lines = ['includeFile = inputs/devices.txt', source,
@@ -256,6 +267,7 @@ class JobWriter:
                     "geometry_configuration": {"input": "inputs/geometry-config.toml",
                         "sha256": self.geometry_snapshot.sha256} if self.geometry_snapshot else None,
                     "ct_grid": definition["ct_grid"], "dose_grid": definition["dose_grid"],
+                    "transport_grid": definition["transport_grid"], "crop_metadata": definition["crop_metadata"],
                     "normalization": definition['normalization'],
                     "units": "Gy/original accelerator history" if definition['normalization']=='original_accelerator_history' else "Gy/primary photon",
                     "weight_units": "original accelerator histories" if definition['normalization']=='original_accelerator_history' else "primary photons",
@@ -288,6 +300,7 @@ class JobWriter:
                 else:
                     from ..geometry.patient_report import write_patient_geometry_report
                     write_patient_geometry_report(ct, cst, stf, head, path,
+                        transport_grid=bundle_io.load_manifest(root).get("transport_grid") if (root/"manifest.json").exists() else None,
                         target_names=tuple(v.name for v in cst.vois if v.voi_type == 'TARGET'),
                         source_records=[dict(j['source'],beam_index=j['beam_index']) for j in
                             bundle_io.load_manifest(root)['jobs']] if (root/'manifest.json').exists() else None)

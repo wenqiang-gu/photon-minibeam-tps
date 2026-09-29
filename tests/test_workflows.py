@@ -12,7 +12,7 @@ import patient_workflow as workflow
 def setup_workflow(monkeypatch, case, tmp_path, target='TARGET'):
     ct,_,cst,_,_=case
     monkeypatch.setattr(workflow, 'load_patient', lambda _: (ct,cst))
-    for key,value in dict(COLLIMATOR_SHIFT_FRACTIONS=[],TARGET=target,GANTRY_ANGLES=[0.,90.],WATER=True,DICOM_DIR=str(tmp_path/'no-dicom'),HISTORIES_PER_JOB=10,ONLY_CENTRAL_BEAMLET=True,BEAMLET_EXECUTION='separate',SOURCE_TYPE='point').items():
+    for key,value in dict(CT_CROP_VOXELS=None,COLLIMATOR_ROTATION_DEG=[],COLLIMATOR_SHIFT_FRACTIONS=[],TARGET=target,GANTRY_ANGLES=[0.,90.],WATER=True,DICOM_DIR=str(tmp_path/'no-dicom'),HISTORIES_PER_JOB=10,ONLY_CENTRAL_BEAMLET=True,BEAMLET_EXECUTION='separate',SOURCE_TYPE='point').items():
         monkeypatch.setattr(workflow,key,value)
     monkeypatch.setattr(sys,'argv',['patient_workflow.py','prepare','--project',str(tmp_path/'workflow')])
     return ct,cst
@@ -73,7 +73,7 @@ def test_globals_used_through_collection_and_forward(monkeypatch,case,tmp_path,s
     monkeypatch.setattr(workflow,'SOURCE_TYPE',source_type)
     if source_type == 'phase_space':
         from test_phase_space import make_iaea
-        monkeypatch.setattr(workflow,'PHASE_SPACE_FILE_BASE',str(make_iaea(tmp_path/'source')))
+        monkeypatch.setattr(workflow,'PHASE_SPACE_FILE_BASES',[str(make_iaea(tmp_path/'source'))])
     calls=[]
     original=workflow.TOPASPhotonEngine.prepare_jobs
     def counted_prepare(self,*args,**kwargs):
@@ -87,7 +87,7 @@ def test_globals_used_through_collection_and_forward(monkeypatch,case,tmp_path,s
     assert all(job['histories']==workflow.HISTORIES_PER_JOB for job in manifest['jobs'])
     if source_type == 'phase_space':
         for suffix in ('.header', '.phsp'):
-            Path(workflow.PHASE_SPACE_FILE_BASE + suffix).unlink()
+            Path(workflow.PHASE_SPACE_FILE_BASES[0] + suffix).unlink()
     for stage in ['collect','forward']:
         calls.clear()
         monkeypatch.setattr(sys,'argv',['patient_workflow.py',stage,'--project',str(root)])

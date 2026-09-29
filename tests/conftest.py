@@ -71,3 +71,11 @@ def reference_hardware_settings(request, monkeypatch):
     original=GeometryConfig.load.__func__
     monkeypatch.setattr(GeometryConfig,'load',classmethod(
         lambda cls,path=None: original(cls,reference if path is None else path)))
+
+
+@pytest.fixture(autouse=True)
+def isolate_editable_crop_settings(monkeypatch):
+    """Synthetic workflow cases must not inherit a user's patient-sized crop."""
+    import patient_workflow
+    monkeypatch.setattr(patient_workflow, 'CT_CROP_VOXELS', None)
+    monkeypatch.setattr(patient_workflow, 'ENFORCE_CT_CROP_PROTECTION', True)

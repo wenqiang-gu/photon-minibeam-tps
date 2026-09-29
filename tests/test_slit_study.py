@@ -149,3 +149,99 @@ def test_inspect_lists_rois_and_optional_estimates(case,tmp_path,monkeypatch,cap
 def explicit_collimator_setting(monkeypatch):
     import patient_workflow
     monkeypatch.setattr(patient_workflow,'ENABLE_COLLIMATOR',True)
+    monkeypatch.setattr(patient_workflow,'COLLIMATOR_ROTATION_DEG',[])
+
+@pytest.mark.parametrize('rotations,fractions,count', [([],[],0),([0.],[],1),([],[0.],1),([0.,45.,90.],[0.,.25,.5,.75],12)])
+def test_rotation_shift_product(rotations,fractions,count):
+    from minibeam.workflow.study import setup_settings
+    from minibeam.geometry.models import BeamGeometry
+    geometry=BeamGeometry.from_config().replace(aperture={'rotation_z_deg':12.,'lateral_shift_mm':1.25})
+    setups=setup_settings(slit_width_mm=2.,nominal_ctc_mm=6.,collimator_shift_fractions=fractions,
+                          collimator_rotations=rotations,geometry=geometry)
+    assert len(setups)==count
+    for name,fraction,angle,config in setups:
+        assert config.aperture.rotation_z_deg==(12. if angle is None else angle-90)
+        assert config.aperture.lateral_shift_mm==(1.25 if fraction is None else fraction*6)
+    if count==12:
+        assert [s[0] for s in setups]==[f'rotation_{int(r):03d}_shift_{int(f*100):03d}' for r in rotations for f in fractions]
+
+
+@pytest.mark.parametrize('values', [None,0.,[[0.]],['90'],[True],[0.,False],[float('nan')],[float('inf')],[0.,0.],[-0.,0.]])
+def test_invalid_rotation_arrays(values):
+    from minibeam.workflow.study import effective_rotations
+    with pytest.raises(ValueError):effective_rotations(enable_collimator=True,values=values)
+    assert not effective_rotations(enable_collimator=False,values=values).size
+
+
+def test_rotation_names():
+    from minibeam.workflow.study import rotation_name
+    assert [rotation_name(a) for a in [-45,22.5,90]]==['rotation_m045','rotation_022p5','rotation_090']
+
+
+@pytest.mark.parametrize('mode',['separate','combined'])
+def test_rotation_study_saved_collection(case,tmp_path,monkeypatch,mode):
+    import shutil
+    import patient_workflow as workflow
+    from test_workflows import setup_workflow
+    from test_results import fake_results
+    from scipy.io import loadmat
+    setup_workflow(monkeypatch,case,tmp_path)
+    monkeypatch.setattr(workflow,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
+    monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[0.,45.,90.])
+    monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',[0.,.25,.5,.75])
+    monkeypatch.setattr(workflow,'BEAMLET_EXECUTION',mode)
+    calls=[];original=workflow.generate_stf
+    def once(*a):calls.append(1);return original(*a)
+    monkeypatch.setattr(workflow,'generate_stf',once)
+    root=tmp_path/'study';workflow.prepare(root)
+    assert len(calls)==1
+    index=json.loads((root/'study.json').read_text());assert len(index['setups'])==12
+    identities=[]
+    for entry in index['setups']:
+        run=root/entry['directory'];m=load_manifest(run);fake_results(run)
+        identities.append(m['request_id'])
+        for beam in m['beam_geometry']:
+            ap=beam['geometry']['aperture']
+            assert ap['rotation_z_deg']==entry['rotation_deg']-90
+            assert ap['lateral_shift_mm']==entry['lateral_shift_mm']
+        saved=loadmat(run/'derived/steering.mat',simplify_cells=True)
+        assert saved['beam_geometry'][0]['geometry']['aperture']['rotation_z_deg']==entry['rotation_deg']-90
+    assert len(set(identities))==12
+    moved=tmp_path/'moved';shutil.move(root,moved)
+    monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG','invalid current settings')
+    monkeypatch.setattr(workflow,'load_patient',lambda *a:pytest.fail('saved collection loaded patient'))
+    workflow.collect(moved);workflow.forward(moved)
+    for entry in index['setups']:
+        assert (moved/entry['directory']/'derived/result.mat').exists()
+        assert (moved/entry['directory']/'derived/dose.mha').exists()
+
+@pytest.mark.parametrize('enabled,rotations,fractions,expected', [
+    (True,[],[],'projects/patient'),(True,[0.],[],'projects/patient-slit-study'),
+    (True,[],[0.],'projects/patient-slit-study'),(False,'ignored','ignored','projects/patient')])
+def test_rotation_directory_defaults(monkeypatch,enabled,rotations,fractions,expected):
+    import patient_workflow as workflow
+    monkeypatch.setattr(workflow,'ENABLE_COLLIMATOR',enabled)
+    monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',rotations)
+    monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
+    assert workflow.parse_arguments(['prepare']).project_dir==expected
+
+
+def test_rotation_only_retains_toml(case,tmp_path,monkeypatch):
+    import patient_workflow as workflow
+    from test_workflows import setup_workflow
+    from minibeam.geometry.configuration import GeometryConfig
+    setup_workflow(monkeypatch,case,tmp_path)
+    monkeypatch.setattr(workflow,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
+    monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[22.5])
+    monkeypatch.setattr(workflow,'SLIT_ENTRANCE_WIDTH_MM',None)
+    monkeypatch.setattr(workflow,'NOMINAL_ENTRANCE_CTC_MM',None)
+    root=tmp_path/'rotation-only';workflow.prepare(root)
+    index=json.loads((root/'study.json').read_text());entry=index['setups'][0]
+    assert entry['directory']=='rotation_022p5'
+    assert entry['shift_fraction'] is None and not entry['shift_override_applied']
+    m=load_manifest(root/entry['directory']);ap=m['beam_geometry'][0]['geometry']['aperture']
+    base=GeometryConfig.load().data['aperture']
+    for key in ['slit_entrance_width_mm','slit_entrance_ctc_mm','lateral_shift_mm']:assert ap[key]==base[key]
+    assert ap['rotation_z_deg']==-67.5
+    monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[45.])
+    with pytest.raises(SystemExit,match='settings changed'):workflow.prepare(root)

@@ -6,7 +6,7 @@ import numpy as np
 import SimpleITK as sitk
 from scipy.spatial import ConvexHull
 from scipy.optimize import linprog
-from .spatial import corners, beam_basis, placement_rotation
+from .spatial import corners, beam_basis
 from .coordinates import patient_center
 from .mlc_jaws import _rounded_mlc_polygon
 
@@ -51,7 +51,7 @@ def material_solids(head, beam):
             raise ValueError('Detailed diagnostics currently support the slit aperture only')
         x, y, z = ap.collimator_width/2, ap.collimator_height/2, ap.collimator_thickness/2
         ax, ay = ap.collimator_air_width/2, ap.collimator_air_height/2
-        rotation = placement_rotation(ap.collimator_rotation_x, ap.collimator_rotation_y)
+        rotation = np.asarray(ap.rotation_matrix)
         local = []
         for sign, label in [(-1, 'Negative'), (1, 'Positive')]:
             local.append(('FrameX'+label, box_vertices([sign*(x+ax)/2, 0, 0], [(x-ax)/2,y,z])))
@@ -61,7 +61,7 @@ def material_solids(head, beam):
             polygon = [[blade.entrance_center_x-w,-z], [blade.entrance_center_x+w,-z],
                        [blade.exit_center_x+w,z], [blade.exit_center_x-w,z]]
             local.append((f'Blade_{blade.number:02d}', extrude(polygon, 0, ay)))
-        solids += [(name, points@rotation.T + [ap.lateral_shift_mm,0,ap.collimator_center_z]) for name, points in local]
+        solids += [(name, points@rotation.T + ap.center_beam_mm) for name, points in local]
     return solids
 
 
@@ -150,13 +150,14 @@ def crop_investigation(ct, cst, stf, head):
     return result
 
 
-def write_collision_diagnostics(ct, cst, stf, head, run_dir, *, patient_report=False):
+def write_collision_diagnostics(ct, cst, stf, head, run_dir, *, patient_report=False, transport_ct=None):
     """Create a separate diagnostic directory; never modify a run bundle."""
     from .report import write_geometry_report
+    from .coordinates import grid_dict
     root = Path(run_dir).resolve()
     root.parent.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix=root.name+'-diagnostics-', dir=root.parent))
-    records = [beam_diagnostics(ct, beam, head, i) for i,beam in enumerate(stf.beams,1)]
+    records = [beam_diagnostics(transport_ct if transport_ct is not None else ct, beam, head, i) for i,beam in enumerate(stf.beams,1)]
     investigation = crop_investigation(ct,cst,stf,head)
     from ..steering import beam_geometry_records
     data = {'status': 'blocked', 'beam_geometry': beam_geometry_records(stf),
@@ -165,7 +166,10 @@ def write_collision_diagnostics(ct, cst, stf, head, run_dir, *, patient_report=F
             'notes': ['Intersections are with the CT transport box, not necessarily patient tissue.',
                       'The slit enclosing box is itself a TOPAS volume, including its air cavity.',
                       'Witness points lie inside intersecting volumes; radii are not penetration depths.',
-                      'No CT, ROI, steering, or dose-grid changes were made.']}
+                      'Original DICOM, planning CT, ROIs and steering were not modified.']}
+    if transport_ct is not None:
+        data['transport_grid'] = grid_dict(transport_ct.grid)
+        data['original_ct_grid'] = grid_dict(ct.grid)
     for i, beam in enumerate(stf.beams, 1):
         (output/f'geometry-beam-{i:03d}.toml').write_text(head.config_for(beam).text)
     (output/'collisions.json').write_text(json.dumps(data,indent=2)+'\n')
@@ -184,7 +188,8 @@ def write_collision_diagnostics(ct, cst, stf, head, run_dir, *, patient_report=F
     if patient_report:
         from .patient_report import write_patient_geometry_report
         write_patient_geometry_report(ct,cst,stf,head,output/'geometry.pdf',
-            target_names=tuple(v.name for v in cst.vois if v.voi_type == 'TARGET'),diagnostics=records)
+            target_names=tuple(v.name for v in cst.vois if v.voi_type == 'TARGET'),diagnostics=records,
+            transport_grid=grid_dict(transport_ct.grid) if transport_ct is not None else None)
     else:
         write_geometry_report(ct,stf,head,output/'geometry.pdf',diagnostics=records)
     return output
