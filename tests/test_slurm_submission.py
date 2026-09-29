@@ -142,3 +142,29 @@ def test_status_fallback(tmp_path,monkeypatch):
     assert submit.scheduler_status({'slurm_job_id':'123'})=='status unavailable'
     sacct=bins/'sacct';sacct.write_text('#!/bin/sh\necho "123_0|COMPLETED"\n');sacct.chmod(0o755)
     assert 'COMPLETED' in submit.scheduler_status({'slurm_job_id':'123'})
+
+
+def test_python38_path_containment(tmp_path):
+    root=tmp_path/'project';root.mkdir()
+    assert submit.within(root,'jobs/input.txt')==root/'jobs/input.txt'
+    assert submit.within(root,'.')==root
+    with pytest.raises(ValueError,match='Path escapes project'):
+        submit.within(root,'../outside.txt')
+    outside=tmp_path/'outside';outside.mkdir()
+    (root/'linked').symlink_to(outside,target_is_directory=True)
+    with pytest.raises(ValueError,match='Path escapes project'):
+        submit.within(root,'linked/input.txt')
+
+
+def test_submission_python38_syntax():
+    import ast
+    ast.parse((SCRIPTS/'submit_topas.py').read_text(),feature_version=(3,8))
+
+
+def test_old_python_message():
+    import sys
+    run=subprocess.run([sys.executable,'-c',
+        'import sys,runpy; sys.version_info=(3,7); runpy.run_path(sys.argv[1],run_name="__main__")',
+        str(SCRIPTS/'submit_topas.py')],capture_output=True,text=True)
+    assert run.returncode!=0
+    assert 'requires Python 3.8 or newer' in run.stderr

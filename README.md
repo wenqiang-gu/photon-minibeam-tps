@@ -824,7 +824,7 @@ use this current setting.
 ### Submit TOPAS jobs with Slurm
 
 Copy the three root-level scripts in `projects/` alongside your project folders.
-The submission node needs Python 3.9+ (standard library only); compute nodes need
+The submission node needs Python 3.8+ (standard library only); compute nodes need
 Bash and TOPAS, without Python or this Python package installed.
 
 ```sh

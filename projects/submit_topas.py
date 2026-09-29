@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """Standard-library submission helper. Use submit_topas.sh for editable defaults."""
+import sys
+
+if sys.version_info < (3, 8):
+    sys.exit("TOPAS submission requires Python 3.8 or newer; pyRadPlan is not required.")
+
 import argparse
 import datetime as dt
 import json
@@ -9,7 +14,6 @@ import re
 import shlex
 import shutil
 import subprocess
-import sys
 import uuid
 
 
@@ -33,8 +37,10 @@ def read_json(path):
 
 def within(root, name):
     path = (root / clean(name)).resolve()
-    if not path.is_relative_to(root):
-        raise ValueError(f'Path escapes project: {name}')
+    try:
+        path.relative_to(root)
+    except ValueError:
+        raise ValueError(f'Path escapes project: {name}') from None
     return path
 
 
