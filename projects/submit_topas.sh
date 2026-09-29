@@ -2,11 +2,11 @@
 # Editable defaults. CPU inference from TOPAS inputs takes priority.
 DEFAULT_THROTTLE=10
 DEFAULT_TIME="48:00:00"
-DEFAULT_MEM=""
+DEFAULT_MEM="8G"
 DEFAULT_PARTITION=""
 DEFAULT_EXCLUDE=""
 DEFAULT_JOB_NAME="topas_general"
-DEFAULT_TOPAS_ENV=""
+DEFAULT_TOPAS_ENV="/data/maia/s245155/Applications/TOPAS/opentopas-env.sh"
 DEFAULT_CPUS_PER_TASK=1
 
 set -euo pipefail
