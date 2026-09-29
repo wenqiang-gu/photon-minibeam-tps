@@ -2,7 +2,7 @@
 # Editable defaults. CPU inference from TOPAS inputs takes priority.
 DEFAULT_THROTTLE=10
 DEFAULT_TIME="48:00:00"
-DEFAULT_MEM="8G"
+DEFAULT_MEM=""
 DEFAULT_PARTITION=""
 DEFAULT_EXCLUDE=""
 DEFAULT_JOB_NAME="topas_general"
