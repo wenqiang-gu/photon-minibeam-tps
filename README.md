@@ -820,3 +820,54 @@ to this setting. Four threads is the patient-script default; the engine default
 for other callers remains one. Existing projects are not modified: prepare a new
 project when changing the setting. Saved-project `collect` and `forward` do not
 use this current setting.
+
+### Submit TOPAS jobs with Slurm
+
+Copy the three root-level scripts in `projects/` alongside your project folders.
+The submission node needs Python 3.9+ (standard library only); compute nodes need
+Bash and TOPAS, without Python or this Python package installed.
+
+```sh
+bash projects/submit_topas.sh projects/patient-collimator \
+  --topas-env /cluster/path/opentopas-env.sh --dry-run
+bash projects/submit_topas.sh projects/patient-collimator/shift_000 \
+  --topas-env /cluster/path/opentopas-env.sh --throttle 10 --mem 12G
+```
+
+Edit the defaults at the beginning of `submit_topas.sh`, or pass `--throttle`,
+`--time`, `--mem`, `--partition`, `--exclude`, `--job-name`, `--topas-env`, and
+`--cpus-per-task`. Use `--help` for details. Defaults are ten concurrent tasks,
+48 hours per task, and job name `topas_general`; unspecified memory/partition
+requests use cluster defaults. Quote node lists such as `'rohpc[9003-9005]'`.
+Environment-script precedence is CLI, `TOPAS_ENV`, then the editable default.
+The environment file is trusted shell code and must be available on compute nodes.
+
+CPU precedence is inferred TOPAS `NumberOfThreads`, CLI, then
+`DEFAULT_CPUS_PER_TASK`. A CLI/inferred mismatch is an error; mixed thread counts
+require separate submissions. Missing thread settings receive a submission-local
+wrapper with an explicit setting. Original TOPAS files are not edited. Automatic
+thread values or arithmetic expressions are rejected: use a literal positive integer.
+
+A study selects every setup in `study.json`; a setup selects jobs in its saved
+manifest. No completed CSV is automatically skipped, and no retry is automatic.
+Each array task sources the environment and changes into its setup directory
+before running TOPAS, preserving relative `inputs/` and `results/` paths. CPU
+requests apply to each task, while throttle limits simultaneous tasks. Keep the
+project, submission artifacts, and environment at the same accessible paths on
+submission/compute nodes, and do not edit inputs while tasks are queued/running.
+
+Each invocation creates `slurm/<timestamp-id>/` under the selected directory,
+with a task manifest, worker snapshot, settings, scheduler receipt and task logs.
+Successful submission appends `slurm/submissions.jsonl` within each affected
+setup. Later invocations show matching history and best-effort `squeue`/`sacct`
+status. History is informational: another invocation still submits all selected
+jobs. Check history and existing outputs before rerunning to avoid duplicate work.
+Scheduler completion is not dose validation; run `collect` to validate results.
+If bookkeeping fails after submission, the script prints the submitted job ID;
+check Slurm before retrying. A dry run reads and validates only, creates nothing,
+and never sources the environment or invokes `sbatch`.
+
+Only root-level `.sh`/`.py` scripts under `projects/` are eligible for Git tracking;
+project subdirectories, simulation data, and scheduler records remain ignored.
+Local tests use simulated Slurm/TOPAS commands; actual cluster submission remains
+unverified until run on your cluster.

@@ -11,7 +11,10 @@ dicom*/
 *.dcm
 *.DCM
 runs/
-projects/
+/projects/*
+!/projects/*.sh
+!/projects/*.py
+/projects/*/
 outputs/
 *.mat
 *.mha
