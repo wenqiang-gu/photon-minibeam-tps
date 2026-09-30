@@ -69,15 +69,16 @@ TOPAS_THREADS_PER_JOB = 4
 ENABLE_COLLIMATOR = True  # overrides TOML aperture.enabled; MLC and jaws unchanged
 GEOMETRY_CONFIG = None  # TOML path for every setup; None uses geometry/config.toml
 # Rotate only the slit collimator (frame and blades); MLC/jaws stay fixed.
-# With zero aperture X/Y tilt:
+# Entries are additional Z rotations relative to the TOML baseline.
+# With packaged baseline -90° and zero aperture X/Y tilt:
 #   0°: slit length along beam X, between the MLC banks.
 #  90°: original orientation, with slit length along beam Y.
 #
 # Rotate about the collimator center FIRST, then shift across the rotated slits.
 # Positive shift: beam +Y at 0°, beam +X at 90°.
 # Each rotation is combined with every shift; e.g. [0.0, 45.0, 90.0].
-# [] retains TOML orientation without a rotation override.
-COLLIMATOR_ROTATION_DEG = []
+# [] and [0.0] have identical geometry; [] adds no rotation folder label.
+COLLIMATOR_ROTATION_DEG = [0.0]
 # Empty shifts keep TOML slit dimensions/translation; rotation entries still apply.
 # Each rotation/shift setup contains all GANTRY_ANGLES / COUCH_ANGLES above.
 SLIT_ENTRANCE_WIDTH_MM = 2.0
@@ -222,6 +223,8 @@ def process_setups(stage, root, fractions, rotations, ct, cst, metadata):
                       collimator_rotations=rotations.tolist(),
                       weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
         else:
+            if ENABLE_COLLIMATOR:
+                print(f"Collimator rotation: baseline Z {geometry.aperture.rotation_z_deg:g} deg + additional 0 deg = resolved Z {geometry.aperture.rotation_z_deg:g} deg")
             stf = enrich_stf(stf, geometry)
             if stage == "inspect":
                 count = len(stf.beams) if BEAMLET_EXECUTION == "combined" else stf.total_number_of_bixels

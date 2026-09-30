@@ -160,7 +160,7 @@ def test_rotation_shift_product(rotations,fractions,count):
                           collimator_rotations=rotations,geometry=geometry)
     assert len(setups)==count
     for name,fraction,angle,config in setups:
-        assert config.aperture.rotation_z_deg==(12. if angle is None else angle-90)
+        assert config.aperture.rotation_z_deg==(12. if angle is None else 12.+angle)
         assert config.aperture.lateral_shift_mm==(1.25 if fraction is None else fraction*6)
     if count==12:
         assert [s[0] for s in setups]==[f'rotation_{int(r):03d}_shift_{int(f*100):03d}' for r in rotations for f in fractions]
@@ -198,6 +198,10 @@ def test_rotation_study_saved_collection(case,tmp_path,monkeypatch,mode):
     index=json.loads((root/'study.json').read_text());assert len(index['setups'])==12
     identities=[]
     for entry in index['setups']:
+        assert entry['rotation_convention']=='toml_baseline_plus_offset_v1'
+        assert entry['baseline_rotation_z_deg']==-90.
+        assert entry['additional_rotation_deg']==entry['rotation_deg']
+        assert entry['resolved_rotation_z_deg']==entry['baseline_rotation_z_deg']+entry['additional_rotation_deg']
         run=root/entry['directory'];m=load_manifest(run);fake_results(run)
         identities.append(m['request_id'])
         for beam in m['beam_geometry']:
@@ -245,3 +249,20 @@ def test_rotation_only_retains_toml(case,tmp_path,monkeypatch):
     assert ap['rotation_z_deg']==-67.5
     monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[45.])
     with pytest.raises(SystemExit,match='settings changed'):workflow.prepare(root)
+
+
+@pytest.mark.parametrize('baseline',[-90.,0.,12.])
+@pytest.mark.parametrize('shift',[0.,.25,.5,.75])
+def test_empty_equals_zero_rotation_with_tilts(baseline,shift):
+    from minibeam.workflow.study import setup_settings
+    from minibeam.geometry.models import BeamGeometry
+    geo=BeamGeometry.from_config().replace(aperture={'rotation_z_deg':baseline,'rotation_x_deg':2.,'rotation_y_deg':3.})
+    args=dict(slit_width_mm=2.,nominal_ctc_mm=6.,collimator_shift_fractions=[shift],geometry=geo)
+    implicit=setup_settings(**args,collimator_rotations=[])[0]
+    explicit=setup_settings(**args,collimator_rotations=[0.])[0]
+    assert implicit[3]==explicit[3]
+    assert implicit[0].startswith('shift_')
+    assert explicit[0].startswith('rotation_000_shift_')
+    setups=setup_settings(**args,collimator_rotations=[0.,45.,90.])
+    assert [s[3].aperture.rotation_z_deg for s in setups]==[baseline,baseline+45,baseline+90]
+    assert geo.aperture.rotation_z_deg==baseline

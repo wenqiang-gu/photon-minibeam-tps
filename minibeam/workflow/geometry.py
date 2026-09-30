@@ -22,5 +22,5 @@ def resolve_geometry(*, config_path, enable_collimator, collimator_rotation_deg=
     if enable_collimator and collimator_rotation_deg is not _UNSET:
         if isinstance(collimator_rotation_deg, bool) or not isinstance(collimator_rotation_deg, Real) or not math.isfinite(collimator_rotation_deg):
             raise ValueError('COLLIMATOR_ROTATION_DEG must be finite numeric, not Boolean')
-        overrides['rotation_z_deg'] = float(collimator_rotation_deg) - 90.0
+        overrides['rotation_z_deg'] = geometry.aperture.rotation_z_deg + float(collimator_rotation_deg)
     return geometry.replace(aperture=overrides)

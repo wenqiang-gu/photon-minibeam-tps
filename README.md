@@ -690,18 +690,30 @@ and its `runs/water-cluster` default.
 
 An entry of `0.0` in `COLLIMATOR_ROTATION_DEG` aligns slit length with the opposing MLC banks
 (beam X). An entry of `90.0` restores the original slit orientation (beam Y). These axis
-descriptions assume zero aperture X/Y tilt. The entire frame and blade assembly
+descriptions assume the packaged -90° baseline and zero aperture X/Y tilt. The entire frame and blade assembly
 rotates about its center first, then translates along its rotated spacing axis:
 positive shifts point along beam +Y at 0° and beam +X at 90°. MLC, jaws, source,
 and steering do not rotate with this setting.
 
-The patient setting overrides TOML `aperture.rotation_z_deg` using the TOPAS
-placement angle `rotation_entry - 90`; existing X/Y tilts are retained.
-With tilts, shifts follow the full rotated 3D spacing axis. Disabled collimators
-ignore this setting. Resolved snapshots include rotation matrices and beam-frame
-translation vectors. Missing TOML Z rotation defaults to zero; shared TOML defaults
-and the water script are unchanged. Prepare a fresh project after this change;
-collection and forward reconstruction of existing projects use saved settings.
+The patient rotation entries are additional Z angles relative to TOML:
+`resolved rotation_z_deg = TOML rotation_z_deg + rotation_entry`.
+The packaged TOML explicitly sets `rotation_z_deg = -90.0`: therefore `[]` and
+`[0.0]` both resolve to -90°, `[45.0]` to -45°, and `[90.0]` to 0°.
+Existing X/Y tilts are retained. Each setup starts from the original baseline;
+angles never accumulate. Empty rotations add no rotation folder label, while
+`[0.0]` creates `rotation_000...` directories with the same physical geometry.
+Disabled collimators ignore rotation settings. New study records label this
+convention `toml_baseline_plus_offset_v1` and record baseline, additional and
+resolved Z angles.
+
+Custom TOML files retain their configured baseline; an omitted Z angle still
+means 0° for compatibility. Set it explicitly to -90° to match the packaged
+orientation. Other workflows using packaged geometry, including water, receive
+the new baseline. Existing saved projects and collection/forward retain their
+saved geometry and original metadata interpretation. Fresh preparation is
+required: newly prepared empty-rotation projects change orientation compared
+with the former packaged default; explicit patient angles retain their previous
+orientation with the new packaged baseline.
 
 ### Optional CT transport cropping and finer dose bins
 

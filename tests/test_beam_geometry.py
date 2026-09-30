@@ -21,7 +21,7 @@ def test_rigid_shifts_across_angles(case,shift):
     ct,plan,cst,_,_=case
     plan.prop_stf.update(generator='photonIMRT',gantry_angles=[45.,135.,225.,315.],couch_angles=[0.]*4)
     native=generate_stf(ct,cst,plan)
-    base=BeamGeometry.from_config()
+    base=BeamGeometry.from_config().replace(aperture={"rotation_z_deg":0.})
     zero=enrich_stf(native,base.replace(aperture={'lateral_shift_mm':0.}))
     stf=enrich_stf(native,base.replace(aperture={'lateral_shift_mm':shift}))
     head=TreatmentHead(None)
@@ -108,7 +108,7 @@ def test_collision_diagnostics_use_attached_shifts(case,tmp_path):
     stf=enrich_stf(native,BeamGeometry.from_config().replace(aperture={'lateral_shift_mm':4.5}))
     # Bring the collimator into this small test CT, without altering its shape.
     for b in stf.beams:
-        b.iso_center = b.iso_center + beam_basis(b)@np.array([0.,0.,420.])
+        b.iso_center = b.iso_center + beam_basis(b)@np.array([0.,0.,float(b.sad)-b.geometry.aperture.source_to_center_mm])
     root=tmp_path/'blocked'
     with pytest.raises(GeometryCollisionError) as error:
         engine.prepare_jobs(ct,cst,stf,bundle_dir=root)
@@ -133,7 +133,7 @@ def test_nonzero_couch_shift_and_zero_legacy_parameters(case):
         assert head.resolved(zero)[3]==resolve(config,float(zero.sad))[3]
         for (name,points),(_,points0) in zip(material_solids(head,beam),material_solids(head,zero)):
             delta=(points-points0)@beam_basis(beam).T
-            expected=beam_basis(beam)[:,0]*3 if name.startswith(('Frame','Blade')) else np.zeros(3)
+            expected=beam_basis(beam)@np.asarray(head.resolved(beam)[1].translation_beam_mm) if name.startswith(('Frame','Blade')) else np.zeros(3)
             np.testing.assert_allclose(delta,np.broadcast_to(expected,delta.shape),atol=1e-10)
 
 @pytest.mark.parametrize('angle',[0.,90.,37.,-25.])
@@ -185,3 +185,13 @@ def test_rotation_validation_tilts_and_exports(case):
     assert record['resolved']['aperture']['translation_beam_mm']==ap.translation_beam_mm
     other=enrich_stf(native,geo.replace(aperture={'rotation_z_deg':0.}))
     assert record['configuration_sha256']!=beam_geometry_records(other)[0]['configuration_sha256']
+
+
+def test_custom_baseline_helper(tmp_path):
+    from minibeam.geometry.configuration import GeometryConfig
+    from minibeam.workflow.geometry import resolve_geometry
+    text=GeometryConfig.load().text.replace('rotation_z_deg = -90.0','rotation_z_deg = 12.0')
+    path=tmp_path/'custom.toml';path.write_text(text)
+    zero=resolve_geometry(config_path=path,enable_collimator=True,collimator_rotation_deg=0.)
+    assert zero==resolve_geometry(config_path=path,enable_collimator=True)
+    assert resolve_geometry(config_path=path,enable_collimator=True,collimator_rotation_deg=45.).aperture.rotation_z_deg==57.

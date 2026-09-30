@@ -66,7 +66,7 @@ def setup_settings(*, slit_width_mm, nominal_ctc_mm, collimator_shift_fractions,
             parts, overrides = [], {}
             if angle is not None:
                 parts.append(rotation_name(angle))
-                overrides['rotation_z_deg'] = angle - 90.
+                overrides['rotation_z_deg'] = geometry.aperture.rotation_z_deg + angle
             if fraction is not None:
                 parts.append(f'shift_{round(fraction*100):03d}')
                 overrides.update(slit_entrance_width_mm=slit_width_mm,
@@ -90,7 +90,7 @@ def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
     voxels = int(np.prod(grid.dimensions))
     total = len(setups)*count
     for name, fraction, angle, config in setups:
-        print(f'{name}: rotation {angle if angle is not None else "TOML"}; shift {config.aperture.lateral_shift_mm:g} mm; '
+        print(f'{name}: baseline Z {geometry.aperture.rotation_z_deg:g} deg + additional {angle if angle is not None else 0:g} deg = resolved Z {config.aperture.rotation_z_deg:g} deg; shift {config.aperture.lateral_shift_mm:g} mm; '
               f'{count} jobs; dense {voxels*count*8/1024**3:.3f} GiB; CSV estimate {voxels*count*100/1024**3:.3f} GiB')
     print(f'Aggregate: {total} jobs; dense {voxels*total*8/1024**3:.3f} GiB; CSV estimate {voxels*total*100/1024**3:.3f} GiB')
     steering = [(name, fraction, angle, enrich_stf(native, config)) for name,fraction,angle,config in setups]
@@ -109,6 +109,7 @@ def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
     settings = dict(target=target, gantry_angles=plan.prop_stf['gantry_angles'], couch_angles=plan.prop_stf['couch_angles'],
         slit_entrance_width_mm=slit_width_mm if len(collimator_shift_fractions) else None,
         nominal_entrance_ctc_mm=nominal_ctc_mm if len(collimator_shift_fractions) else None,
+        rotation_convention="toml_baseline_plus_offset_v1", baseline_rotation_z_deg=geometry.aperture.rotation_z_deg,
         rotations=list(collimator_rotations),
         shifts=collimator_shift_fractions, target_covering_bixels=plan.prop_stf['generator'] == 'photonIMRT', plan=plan.prop_dose_calc,
         sad_mm=float(native.beams[0].sad), bixel_width_mm=float(native.beams[0].bixel_width))
@@ -122,6 +123,10 @@ def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
             raise SystemExit('Study settings changed; use a fresh --project')
     else:
         index = dict(settings=settings, setups=[dict(directory=name, shift_fraction=fraction,
+            rotation_convention="toml_baseline_plus_offset_v1",
+            baseline_rotation_z_deg=geometry.aperture.rotation_z_deg,
+            additional_rotation_deg=angle if angle is not None else 0.0,
+            resolved_rotation_z_deg=stf.beams[0].geometry.aperture.rotation_z_deg,
             rotation_deg=angle, rotation_override_applied=angle is not None, shift_override_applied=fraction is not None,
             lateral_shift_mm=stf.beams[0].geometry.aperture.lateral_shift_mm,
             preparation_status='pending') for name,fraction,angle,stf in steering])
