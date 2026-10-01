@@ -1,10 +1,10 @@
 """Rotation/shift setup preparation and bookkeeping for the unified patient workflow."""
+from .planning import workload_estimate
 import json
 import numpy as np
 from minibeam.steering import enrich_stf, beam_geometry_records
 from minibeam.geometry.assembly import GeometryCollisionError
-from minibeam.geometry.coordinates import scoring_grid
-from minibeam.workflow.execution import run_stage
+from minibeam.workflow.artifacts import prepare_project
 
 
 def validate_shift_fractions(values):
@@ -79,20 +79,21 @@ def setup_settings(*, slit_width_mm, nominal_ctc_mm, collimator_shift_fractions,
 
 def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
               slit_width_mm, nominal_ctc_mm, collimator_shift_fractions, geometry,
-              weight_per_bixel=1.0, collimator_rotations=()):
-    """Run the selected stage for every shift; each setup remains independent."""
+              collimator_rotations=()):
+    """Inspect or prepare independent geometry setups; collection uses saved indexes."""
+    if stage not in {"inspect", "prepare"}:
+        raise ValueError("Study planning supports only inspect and prepare; use saved-project collection")
     setups = setup_settings(slit_width_mm=slit_width_mm, nominal_ctc_mm=nominal_ctc_mm,
                             collimator_shift_fractions=collimator_shift_fractions, geometry=geometry,
                             collimator_rotations=collimator_rotations)
     from ..geometry.cropping import resolve_grids
     _, grid, _ = resolve_grids(ct, plan.prop_dose_calc.get('ct_crop_voxels'), plan.prop_dose_calc.get('dose_spacing_mm'), cst, plan.prop_dose_calc.get('enforce_ct_crop_protection', True))
     count = len(native.beams) if plan.prop_dose_calc.get('beamlet_execution')=='combined' else native.total_number_of_bixels
-    voxels = int(np.prod(grid.dimensions))
     total = len(setups)*count
     for name, fraction, angle, config in setups:
         print(f'{name}: baseline Z {geometry.aperture.rotation_z_deg:g} deg + additional {angle if angle is not None else 0:g} deg = resolved Z {config.aperture.rotation_z_deg:g} deg; shift {config.aperture.lateral_shift_mm:g} mm; '
-              f'{count} jobs; dense {voxels*count*8/1024**3:.3f} GiB; CSV estimate {voxels*count*100/1024**3:.3f} GiB')
-    print(f'Aggregate: {total} jobs; dense {voxels*total*8/1024**3:.3f} GiB; CSV estimate {voxels*total*100/1024**3:.3f} GiB')
+              + workload_estimate(grid, count))
+    print(f'Aggregate: {workload_estimate(grid, total)}')
     steering = [(name, fraction, angle, enrich_stf(native, config)) for name,fraction,angle,config in setups]
     for name, _, _, stf in steering:
         aperture = beam_geometry_records(stf)[0]['resolved']['aperture']
@@ -100,10 +101,6 @@ def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
         print(f'{name}: actual entrance pitch {min(pitches):.6f}..{max(pitches):.6f} mm; physical blades {stf.beams[0].geometry.aperture.blade_thickness_mm:g} mm')
     if stage == 'inspect':
         return  # read-only steering/settings inspection, no replay files
-    if stage in {'collect','forward'}:
-        for name,_,_,_ in steering:
-            if not (root/name/'manifest.json').is_file():
-                raise SystemExit(f'{name}: prepare successfully and return TOPAS results before {stage}')
     root.mkdir(parents=True, exist_ok=True)
     index_path = root/'study.json'
     settings = dict(target=target, gantry_angles=plan.prop_stf['gantry_angles'], couch_angles=plan.prop_stf['couch_angles'],
@@ -142,16 +139,15 @@ def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
         current_plan.prop_dose_calc['bundle_dir'] = str(run)
         entry['beam_geometry'] = beam_geometry_records(stf)
         try:
-            run_stage(stage, run, ct, cst, current_plan, stf, metadata,
-                      weight_per_bixel=weight_per_bixel)
-            if stage == 'prepare': entry['preparation_status'] = 'prepared'
+            prepare_project(run, ct, cst, current_plan, stf, metadata)
+            entry['preparation_status'] = 'prepared'
             entry['last_stage'] = stage
             entry['last_stage_status'] = 'complete'
             entry.pop('error',None)
         except (ValueError, OSError, RuntimeError) as error:
             entry['last_stage_status'] = 'failed'
             entry['error'] = str(error)
-            if stage == 'prepare': entry['preparation_status'] = 'blocked' if isinstance(error,GeometryCollisionError) else 'failed'
+            entry['preparation_status'] = 'blocked' if isinstance(error,GeometryCollisionError) else 'failed'
             if isinstance(error,GeometryCollisionError):
                 entry['diagnostics_directory'] = str(error.diagnostics_dir.relative_to(root))
             failures.append(name)

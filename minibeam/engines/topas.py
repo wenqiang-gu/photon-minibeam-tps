@@ -77,7 +77,7 @@ class TOPASPhotonEngine(DoseEngineBase):
             kind=self.source_config.get('type')
             if kind=='point' and set(self.source_config)=={'type'}:
                 source_model=PointBeamletSource()
-            elif kind=='phase_space' and set(self.source_config) in ({'type','file_base'}, {'type','file_bases'}):
+            elif kind=='phase_space' and set(self.source_config) - {'selection'} in ({'type','file_base'}, {'type','file_bases'}):
                 from ..sources.phase_space import PhaseSpaceBeamletSource
                 source_model=PhaseSpaceBeamletSource(**{k:v for k,v in self.source_config.items() if k != 'type'})
             else:
@@ -86,6 +86,9 @@ class TOPASPhotonEngine(DoseEngineBase):
         if self.beamlet_execution not in {"separate", "combined"}:
             raise ValueError("beamlet_execution must be separate or combined")
         self.source_model = source_model or PointBeamletSource()
+        if hasattr(self.source_model, 'selection_mode'):
+            from ..sources.phase_space import validate_selection
+            validate_selection(self.source_model.selection_mode, self.beamlet_execution)
         if geometry is not None and devices is not None:
             raise ValueError("Use geometry or devices, not both")
         self.geometry = geometry or GeometryInclude("")

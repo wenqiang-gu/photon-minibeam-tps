@@ -164,8 +164,10 @@ def indexing_report(manifest, stage, image=None):
     jobs = manifest['jobs']
     targets = manifest.get('planning', {}).get('plan', {}).get('target_names', [])
     roi_name = (targets[0] if targets else 'YOUR_ROI_NAME').replace("'", "''")
+    from ..topas.manifest import phase_space_selection
     lines = ['# Dose indexing', '', f"Run: `{manifest['bundle_id']}`. Stage: `{stage}`.",
         f"Normalization: {manifest['units']}; weights: {manifest['weight_units']}.", '',
+        f"Phase-space selection: `{phase_space_selection(manifest)}`.", '',
         '## Files and MATLAB loading', '',
         '| File / variable | Meaning |', '|---|---|',
         '| `steering.mat` | Prepared planning snapshot; contains no calculated dose. |',
@@ -298,6 +300,8 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
     if manifest.get('column_mapping'):
         exported['column_mapping'] = manifest['column_mapping']
     exported['beamlet_execution'] = manifest.get('beamlet_execution','separate')
+    from ..topas.manifest import phase_space_selection
+    exported['phase_space_selection'] = phase_space_selection(manifest)
     image = None
     diagnostics = []
     current = io.implementation_hashes()
@@ -369,6 +373,7 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
             from .beam_dose_plot import beam_plot_report
             report += beam_plot_report(status['dose_plot'])
         temp.write_text(report)
+    status['phase_space_selection'] = phase_space_selection(manifest)
     status['crop_metadata'] = manifest.get('crop_metadata')
     status['scorer_warnings'] = diagnostics
     status['review_required'] = bool(diagnostics)

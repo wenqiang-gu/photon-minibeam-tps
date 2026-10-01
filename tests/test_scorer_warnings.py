@@ -4,7 +4,7 @@ import pytest
 import SimpleITK as sitk
 from scipy.io import loadmat
 from minibeam.topas.scoring import score_rows, _UNSCORED_WARNING, _UNSCORED_DETAILS
-from minibeam.workflow.artifacts import save_artifacts
+from minibeam.workflow.artifacts import save_planning_snapshot
 from minibeam.workflow.collection import collect_bundle
 from test_results import fake_results
 
@@ -22,7 +22,7 @@ def test_both_stages_preserve_dose_with_multiple_warnings(case, capsys):
     ct,plan,cst,stf,engine = case
     root = engine.prepare_jobs(ct,cst,stf)
     m = fake_results(root)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     # Include an explicit zero-dose bin.
     for job in m['jobs']:
         path=root/job['output']

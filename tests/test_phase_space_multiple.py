@@ -71,13 +71,13 @@ def test_rejections(case,parts,failure):
 @pytest.mark.parametrize('mode',['separate','combined'])
 def test_portable_collection(case,parts,tmp_path,mode):
     from test_results import fake_results
-    from minibeam.workflow.artifacts import save_artifacts
+    from minibeam.workflow.artifacts import save_planning_snapshot
     from minibeam.workflow.collection import collect_bundle
     import SimpleITK as sitk
     ct,plan,cst,stf,_=case
     config={'type':'phase_space','file_bases':list(map(str,parts))}
     engine=TOPASPhotonEngine(plan,water=True,histories=24,source_config=config,beamlet_execution=mode)
-    root=engine.prepare_jobs(ct,cst,stf);save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    root=engine.prepare_jobs(ct,cst,stf);save_planning_snapshot(ct,cst,plan,stf,root,{})
     fake_results(root)
     m=load_manifest(root)
     assert all(j['source']['represented_original_histories']==24 for j in m['jobs'])

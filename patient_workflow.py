@@ -7,26 +7,14 @@
     python patient_workflow.py forward --project projects/patient-example
 
 ENABLE_COLLIMATOR=False produces one run without the slit collimator.
-When enabled, COLLIMATOR_SHIFT_FRACTIONS selects the layout: [] writes one configured run;
-nonempty arrays create one shift folder per fraction.
+When enabled, rotation and shift arrays select the setup combinations.
+Both arrays empty write one configured run; otherwise each combination has its own folder.
 
-Collect and forward read the saved run, independently of current planning settings.
-"""
-import argparse
-from pathlib import Path
-
-import numpy as np
-from pyRadPlan import load_patient, PhotonPlan, generate_stf
-from pyRadPlan.machines import PhotonLINAC
-
-from minibeam import TOPASPhotonEngine
-from minibeam.geometry.assembly import GeometryCollisionError
-from minibeam.geometry.coordinates import scoring_grid
-from minibeam.workflow.patient import read_roi_metadata, select_target
-from minibeam.workflow.execution import run_stage
-from minibeam.workflow.study import run_study, effective_shift_fractions, effective_rotations
-from minibeam.workflow.geometry import resolve_geometry
-from minibeam.steering import enrich_stf
+Collect and forward read the saved run, independently of current planning settings."""
+from copy import deepcopy
+from minibeam.workflow import patient
+from minibeam.workflow.collection import collect_saved_run
+from minibeam.workflow.cli import parse_stage_arguments, dispatch
 
 
 # EDITABLE SETTINGS
@@ -35,10 +23,9 @@ from minibeam.steering import enrich_stf
 # Patient and target
 DICOM_DIR = "dicom_9306087_fine"
 TARGET = "PTV2017fw"
-WATER = False
 
 # Native steering and job grouping
-GANTRY_ANGLES = [45.0, 135.0, 225.0, 315.0]
+GANTRY_ANGLES = [0.0] # [45.0, 135.0, 225.0, 315.0]
 COUCH_ANGLES = None  # zero for each gantry angle
 SAD_MM = 1000.0
 BIXEL_WIDTH_MM = 5.0
@@ -52,6 +39,13 @@ ISO_CENTER_LPS_MM = None
 SOURCE_TYPE = "phase_space"  # "point" or "phase_space"
 # Ordered, distinct original-history batches; each basename has .header and .phsp.
 # Shared-history particle splits are unsupported. Validation cannot prove independence.
+# Applies only to SOURCE_TYPE = "phase_space".
+# "field": replay particles projected into the selected bixels.
+# "all_forward": replay every downstream particle in the original-history prefix.
+# Requires combined execution; physical MLC/jaws/collimator define irradiation.
+# Transport scatter is included in BOTH modes. Empty histories still count in
+# HISTORIES_PER_JOB and dose normalization; this does not select N particles.
+PHASE_SPACE_SELECTION = "field"
 PHASE_SPACE_FILE_BASES = [
     "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1",
     "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2",
@@ -86,7 +80,7 @@ NOMINAL_ENTRANCE_CTC_MM = 6.0  # slit width + configured physical blade thicknes
 # Slit collimator only; MLC and jaws remain fixed.
 # Shift distance = fraction × NOMINAL_ENTRANCE_CTC_MM.
 # Translation follows the rotated slit-spacing axis, across the slits.
-COLLIMATOR_SHIFT_FRACTIONS = [0.0, 0.25, 0.50, 0.75]
+COLLIMATOR_SHIFT_FRACTIONS = [0.0] # [0.0, 0.25, 0.50, 0.75]
 
 # Scoring and visualization
 # Optional CT crop in original voxel indices, ordered X/Y/Z.
@@ -109,198 +103,63 @@ ENABLE_OPENGL = False  # interactive TOPAS viewer; keep False for cluster batch 
 FORWARD_WEIGHT_PER_BIXEL = 1.0
 
 
-# SHARED PLANNING HELPERS
-
-def configure_plan(*, project_dir):
-    """Configure a native PhotonPlan from the editable settings above.
-
-    This is an idealized geometry-only machine: 6.0 is a nominal steering label.
-    TOPAS uses the selected source independently of that label. No clinical machine kernels or MU calibration are involved.
-    """
-    if TARGET is None or GANTRY_ANGLES is None:
-        raise SystemExit("Set TARGET and GANTRY_ANGLES in patient_workflow.py first")
-    if type(TOPAS_THREADS_PER_JOB) is not int or TOPAS_THREADS_PER_JOB < 1:
-        raise ValueError("TOPAS_THREADS_PER_JOB must be a positive integer")
-    if BEAMLET_EXECUTION not in {"separate", "combined"}:
-        raise ValueError("BEAMLET_EXECUTION must be separate or combined")
-    if type(ONLY_CENTRAL_BEAMLET) is not bool:
-        raise ValueError("ONLY_CENTRAL_BEAMLET must be a Boolean: True (central beamlet) or False (all target-selected beamlets)")
-    gantry = np.asarray(GANTRY_ANGLES, dtype=float)
-    couch = np.zeros_like(gantry) if COUCH_ANGLES is None else np.asarray(COUCH_ANGLES, dtype=float)
-    if gantry.ndim != 1 or not gantry.size or couch.shape != gantry.shape or not np.isfinite([gantry, couch]).all():
-        raise ValueError("Provide matching, nonempty finite gantry/couch angle lists")
-    if not all(np.isfinite(x) and x > 0 for x in (SAD_MM, BIXEL_WIDTH_MM)):
-        raise ValueError("SAD and bixel width must be positive and finite")
-    # Native steering defaults to 6.0; this label does not set TOPAS photon energies.
-    machine = PhotonLINAC(version=2, name="IdealSpectrumPhoton", energies=np.array([6.0]),
-                          sad=SAD_MM, scd=SAD_MM / 2)
-    machine_data = machine.model_dump(exclude_none=True, exclude_computed_fields=True)
-    machine_data["meta"] = {"radiation_mode": "photons"}
-    plan = PhotonPlan(machine=machine_data, num_of_fractions=1)
-    plan.prop_stf = {"generator": "photonSingleBixel" if ONLY_CENTRAL_BEAMLET else "photonIMRT",
-                     "gantry_angles": gantry.tolist(),
-                     "couch_angles": couch.tolist(), "bixel_width": BIXEL_WIDTH_MM, "add_margin": False}
-    if ISO_CENTER_LPS_MM is not None:
-        iso = np.asarray(ISO_CENTER_LPS_MM, dtype=float)
-        if iso.shape != (3,) or not np.isfinite(iso).all():
-            raise ValueError("Isocenter must be three finite LPS coordinates in mm")
-        plan.prop_stf["iso_center"] = iso.reshape(1, 3)
-    # Without an override generate_stf uses native cst.target_center_of_mass().
-    plan.prop_dose_calc = {"engine": "TOPASPhoton", "bundle_dir": str(project_dir),
-                          "histories": HISTORIES_PER_JOB, "num_threads": TOPAS_THREADS_PER_JOB, "beamlet_execution": BEAMLET_EXECUTION, "water": WATER, "enable_opengl": ENABLE_OPENGL}
-    if SOURCE_TYPE not in {'point','phase_space'}:
-        raise ValueError('SOURCE_TYPE must be point or phase_space')
-    plan.prop_dose_calc['source_config'] = {'type': SOURCE_TYPE}
-    if SOURCE_TYPE == 'phase_space':
-        plan.prop_dose_calc['source_config']['file_bases'] = PHASE_SPACE_FILE_BASES
-    if not WATER:
-        plan.prop_dose_calc["dicom_dir"] = str(DICOM_DIR)
-    plan.prop_dose_calc["enforce_ct_crop_protection"] = ENFORCE_CT_CROP_PROTECTION
-    if CT_CROP_VOXELS is not None:
-        plan.prop_dose_calc["ct_crop_voxels"] = CT_CROP_VOXELS
-    if DOSE_SPACING_MM is not None:
-        plan.prop_dose_calc["dose_spacing_mm"] = DOSE_SPACING_MM
-    return plan
+def planning_settings():
+    """Capture editable planning inputs; saved-result stages never call this."""
+    return deepcopy(patient.PatientSettings(
+        dicom_dir=DICOM_DIR,
+        target=TARGET,
+        gantry_angles=GANTRY_ANGLES,
+        couch_angles=COUCH_ANGLES,
+        sad_mm=SAD_MM,
+        bixel_width_mm=BIXEL_WIDTH_MM,
+        only_central_beamlet=ONLY_CENTRAL_BEAMLET,
+        beamlet_execution=BEAMLET_EXECUTION,
+        iso_center_lps_mm=ISO_CENTER_LPS_MM,
+        source_type=SOURCE_TYPE,
+        phase_space_file_bases=PHASE_SPACE_FILE_BASES,
+        phase_space_selection=PHASE_SPACE_SELECTION,
+        histories_per_job=HISTORIES_PER_JOB,
+        topas_threads_per_job=TOPAS_THREADS_PER_JOB,
+        enable_collimator=ENABLE_COLLIMATOR,
+        geometry_config=GEOMETRY_CONFIG,
+        collimator_rotation_deg=COLLIMATOR_ROTATION_DEG,
+        slit_entrance_width_mm=SLIT_ENTRANCE_WIDTH_MM,
+        nominal_entrance_ctc_mm=NOMINAL_ENTRANCE_CTC_MM,
+        collimator_shift_fractions=COLLIMATOR_SHIFT_FRACTIONS,
+        ct_crop_voxels=CT_CROP_VOXELS,
+        enforce_ct_crop_protection=ENFORCE_CT_CROP_PROTECTION,
+        dose_spacing_mm=DOSE_SPACING_MM,
+        enable_opengl=ENABLE_OPENGL,
+    ))
 
 
-
-def planning_directory(project_dir):
-    """Check the requested single-project/study layout without writing anything."""
-    root = Path(project_dir).resolve()
-    fractions = effective_shift_fractions(
-        enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_SHIFT_FRACTIONS)
-    rotations = effective_rotations(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_ROTATION_DEG)
-    if not (fractions.size or rotations.size) and (root / "study.json").exists():
-        raise SystemExit("This is a study directory; restore its enabled collimator and rotation/shift settings or choose a new project directory")
-    if (fractions.size or rotations.size) and (root / "manifest.json").exists():
-        raise SystemExit("This is a single-project directory; use its study parent or a new study root")
-    print("Collimator: enabled" if ENABLE_COLLIMATOR else
-          "Collimator: disabled; collimator rotations, shifts and slit overrides are inactive")
-    print(f"TOPAS threads per job: {TOPAS_THREADS_PER_JOB}")
-    return root, fractions, rotations
-
-
-def import_patient():
-    """Load native anatomy and retain original DICOM ROI identifiers."""
-    ct, cst = load_patient(str(DICOM_DIR))
-    metadata = read_roi_metadata(DICOM_DIR, cst)
-    print(f"Native import: CT {ct.size}; {len(cst.vois)} structures. Omitted: {metadata['omitted_rois']}")
-    return ct, cst, metadata
-
-
-def build_steering(ct, cst, project_dir):
-    """Select the target and generate native steering once for all setups."""
-    plan = configure_plan(project_dir=project_dir)
-    select_target(cst, TARGET)
-    from minibeam.workflow.crop_preview import preview_crop
-    try:
-        _, grid, crop = preview_crop(ct, cst, project_dir, CT_CROP_VOXELS, DOSE_SPACING_MM,
-                                     (TARGET,), ENFORCE_CT_CROP_PROTECTION)
-    except ValueError as error:
-        raise SystemExit(f"CT crop / dose-grid preparation stopped: {error}") from None
-    print(f"Transport crop: {crop['retained_ranges']}; dose spacing: {crop['actual_dose_spacing_mm']} mm")
-    if ct.size[0] != ct.size[1] or grid.dimensions[0] != grid.dimensions[1]:
-        raise ValueError("matRad export requires square transverse CT and dose grids with pyRadPlan 0.5.0")
-    stf = generate_stf(ct, cst, plan)
-    if ISO_CENTER_LPS_MM is None:
-        x, y, z = stf.beams[0].iso_center
-        print(f"Isocenter from target '{TARGET}' centroid (LPS, mm): "
-              f"x={x:.3f}, y={y:.3f}, z={z:.3f}")
-    history_unit = "original accelerator histories" if SOURCE_TYPE == "phase_space" else "primary photons"
-    print(f"Source: {SOURCE_TYPE}; {HISTORIES_PER_JOB:,} {history_unit} per job")
-    return plan, stf, grid
-
-
-def process_setups(stage, root, fractions, rotations, ct, cst, metadata):
-    """Inspect or prepare resolved hardware setups with shared native steering."""
-    geometry = resolve_geometry(config_path=GEOMETRY_CONFIG, enable_collimator=ENABLE_COLLIMATOR)
-    plan, stf, grid = build_steering(ct, cst, root)
-    try:
-        if fractions.size or rotations.size:
-            run_study(stage, root, ct, cst, plan, stf, metadata, target=TARGET,
-                      slit_width_mm=SLIT_ENTRANCE_WIDTH_MM, nominal_ctc_mm=NOMINAL_ENTRANCE_CTC_MM,
-                      collimator_shift_fractions=fractions.tolist(), geometry=geometry,
-                      collimator_rotations=rotations.tolist(),
-                      weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
-        else:
-            if ENABLE_COLLIMATOR:
-                print(f"Collimator rotation: baseline Z {geometry.aperture.rotation_z_deg:g} deg + additional 0 deg = resolved Z {geometry.aperture.rotation_z_deg:g} deg")
-            stf = enrich_stf(stf, geometry)
-            if stage == "inspect":
-                count = len(stf.beams) if BEAMLET_EXECUTION == "combined" else stf.total_number_of_bixels
-                voxels = int(np.prod(grid.dimensions))
-                print(f"Single configured run: {count} jobs; dense {voxels*count*8/1024**3:.3f} GiB; "
-                      f"CSV estimate {voxels*count*100/1024**3:.3f} GiB")
-            else:
-                run_stage("prepare", root, ct, cst, plan, stf, metadata,
-                          weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
-    except GeometryCollisionError as error:
-        raise SystemExit(f"Geometry preparation stopped: {error}") from None
-
-
-# INSPECT: list structures and optionally estimate the configured simulation.
 def inspect(project_dir):
-    """List anatomy, preview a configured crop, and estimate without simulation inputs."""
-    root, fractions, rotations = planning_directory(project_dir)
-    ct, cst, metadata = import_patient()
-    for roi in metadata["original_dicom_rois"]:
-        print(f"{roi['number']:3d}  {roi['name']}")
-    if TARGET is not None:
-        process_setups("inspect", root, fractions, rotations, ct, cst, metadata)
-    elif CT_CROP_VOXELS is not None:
-        from minibeam.workflow.crop_preview import preview_crop
-        try:
-            preview_crop(ct, cst, root, CT_CROP_VOXELS, DOSE_SPACING_MM, enforce_protection=ENFORCE_CT_CROP_PROTECTION)
-        except ValueError as error:
-            raise SystemExit(f"CT crop preparation stopped: {error}") from None
+    """Inspect the configured setup."""
+    return patient.inspect(planning_settings(), project_dir)
 
 
-# PREPARE: create portable TOPAS inputs; execution happens on the cluster.
 def prepare(project_dir):
-    """Import, plan, and write one run or the configured collimator setups."""
-    root, fractions, rotations = planning_directory(project_dir)
-    ct, cst, metadata = import_patient()
-    process_setups("prepare", root, fractions, rotations, ct, cst, metadata)
+    """Prepare portable TOPAS inputs; execution remains external."""
+    return patient.prepare(planning_settings(), project_dir)
 
 
-# COLLECT: assemble dose matrices from saved bundles and completed CSV outputs.
 def collect(project_dir):
-    """Use saved planning snapshots, independent of current planning settings."""
-    from minibeam.workflow.collection import collect_saved_run
-    try:
-        collect_saved_run(project_dir, "collect", weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
-    except (ValueError, OSError, RuntimeError) as error:
-        raise SystemExit(str(error)) from None
+    """Collect using saved planning and completed CSVs only."""
+    return collect_saved_run(project_dir, "collect")
 
 
-# FORWARD: apply exposure weights to saved dose columns and sum the dose.
 def forward(project_dir):
-    """Reconstruct dose using saved source units and the editable weights."""
-    from minibeam.workflow.collection import collect_saved_run
-    try:
-        collect_saved_run(project_dir, "forward", weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
-    except (ValueError, OSError, RuntimeError) as error:
-        raise SystemExit(str(error)) from None
+    """Reconstruct saved dose with the explicit exposure weights."""
+    return collect_saved_run(project_dir, "forward", weight_per_bixel=FORWARD_WEIGHT_PER_BIXEL)
 
 
-# COMMAND-LINE ENTRY POINT
 def parse_arguments(argv=None):
-    """Choose the stage and output folder; patient settings live above."""
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("stage", choices=["inspect", "prepare", "collect", "forward"])
-    parser.add_argument("--project", dest="project_dir", help="project directory path: rotation/shift subfolders when enabled override arrays are nonempty")
-    args = parser.parse_args(argv)
-    if args.stage in {"collect", "forward"} and args.project_dir is None:
-        parser.error("--project is required for collect and forward")
-    if args.project_dir is None:
-        args.project_dir = "projects/patient-slit-study" if (effective_shift_fractions(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_SHIFT_FRACTIONS).size or effective_rotations(enable_collimator=ENABLE_COLLIMATOR, values=COLLIMATOR_ROTATION_DEG).size) else "projects/patient"
-    return args
+    return parse_stage_arguments(argv, description=__doc__, inspect_directory="projects/patient")
 
 
 def main(argv=None):
-    args = parse_arguments(argv)
-    stages = {"inspect": inspect, "prepare": prepare, "collect": collect, "forward": forward}
-    stages[args.stage](args.project_dir)
+    dispatch(parse_arguments(argv), {"inspect": inspect, "prepare": prepare,
+                                     "collect": collect, "forward": forward})
 
 
 if __name__ == "__main__":

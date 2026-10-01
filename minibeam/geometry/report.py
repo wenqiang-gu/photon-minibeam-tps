@@ -9,6 +9,18 @@ from .coordinates import patient_center
 from .apertures import APERTURE_TYPES
 
 
+def slit_projections(head, beam, axis):
+    """Project complete collision solids into beam-local (Z, transverse) axes."""
+    from scipy.spatial import ConvexHull
+    from .diagnostics import material_solids
+    polygons = []
+    for name, vertices in material_solids(head, beam):
+        if name.startswith(('Frame', 'Blade_')):
+            points = np.asarray(vertices)[:, [2, axis]]
+            polygons.append((name, points[ConvexHull(points).vertices]))
+    return polygons
+
+
 def write_geometry_report(ct, stf, head, path, diagnostics=None):
     os.environ.setdefault('MPLCONFIGDIR',str(Path(tempfile.gettempdir())/'minibeam-matplotlib'))
     import matplotlib
@@ -63,20 +75,23 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                                         [stage.entrance_z,sign*outer],[stage.exit_z,sign*outer],
                                         [stage.exit_z,sign*stage.exit_opening/2]])
                                 ax.add_patch(Polygon(points,fc='#718299',ec='#374b60',lw=.6))
-                    if ap and axis==0:
-                        for polygon in APERTURE_TYPES[head.config_for(beam).data['aperture']['type']].drawing(ap):
-                            points=np.asarray(polygon)
-                            ax.add_patch(Polygon(points[:,[2,0]],fc='#bba25f',ec='#806b38',lw=.4))
+                    if ap:
+                        for name, points in slit_projections(head, beam, axis):
+                            # Translucency reveals overlapping solids; these are
+                            # projections, not sections cut through an air channel.
+                            ax.add_patch(Polygon(points, fc='#bba25f', ec='#806b38',
+                                                 lw=.4, alpha=.18 if name.startswith('Frame') else .5))
                     ax.set_xlim(-beam.sad-45,max(50,ct_local[:,2].max()+20))
                     ax.set_ylim(min(-230,ct_local[:,axis].min()-30),max(240,ct_local[:,axis].max()+30))
                     ax.set_xlabel('Beam-local Z (mm); isocenter at 0',fontsize=9)
-                    ax.set_ylabel(f'{axis_name} (mm)',fontsize=9);ax.grid(alpha=.15)
+                    ax.set_ylabel(f'{axis_name} (mm), projection',fontsize=9);ax.grid(alpha=.15)
                 if ap:
                     APERTURE_TYPES[head.config_for(beam).data['aperture']['type']].draw_entrance(ap,entrance)
                 else:
                     entrance.axis('off');entrance.text(.1,.5,'No downstream aperture',fontsize=12)
                 lines=['GEOMETRY RECORD', 'Schematic, not a patient surface or dose image.',
-                       'Dashed gray: conservative CT box projection.', 'Dashed orange: configured field edges.']
+                       'Dashed gray: conservative CT box projection.', 'Dashed orange: configured field edges.',
+                       'Brass: translucent frame/blade projections; overlaps retained.']
                 if head:
                     d=head.config_for(beam).data;f=d['field']
                     lines += [f"Field at isocenter: {f['width_mm']:g} x {f['height_mm']:g} mm",

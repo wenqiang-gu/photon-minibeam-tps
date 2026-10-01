@@ -14,18 +14,24 @@ def test_shift_setup_workflow(case,tmp_path,monkeypatch,only_central,fractions):
     monkeypatch.setattr(study,'BEAMLET_EXECUTION','separate')
     monkeypatch.setattr(study,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
     monkeypatch.setattr(study,'ONLY_CENTRAL_BEAMLET',only_central)
-    monkeypatch.setattr(study,'load_patient',lambda _: (ct,cst))
-    monkeypatch.setattr(study,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
+    monkeypatch.setattr(study.patient,'load_patient',lambda _: (ct,cst))
+    monkeypatch.setattr(study.patient,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
     monkeypatch.setattr(study,'TARGET','TARGET')
     monkeypatch.setattr(study,'SOURCE_TYPE','point')
     monkeypatch.setattr(study,'HISTORIES_PER_JOB',10)
-    monkeypatch.setattr(study,'WATER',True)
-    original=study.generate_stf
+    configure = study.patient.configure_plan
+    def synthetic_plan(settings, **kwargs):
+        plan = configure(settings, **kwargs)
+        plan.prop_dose_calc['water'] = True
+        plan.prop_dose_calc.pop('dicom_dir', None)
+        return plan
+    monkeypatch.setattr(study.patient,'configure_plan',synthetic_plan)
+    original=study.patient.generate_stf
     calls=[]
     def once(*args):
         calls.append(True)
         return original(*args)
-    monkeypatch.setattr(study,'generate_stf',once)
+    monkeypatch.setattr(study.patient,'generate_stf',once)
     root=tmp_path/'study'
     study.main(['inspect','--project',str(root)])
     assert not root.exists()
@@ -71,7 +77,7 @@ def test_shift_setup_workflow(case,tmp_path,monkeypatch,only_central,fractions):
 def test_array_cli_defaults(monkeypatch,fractions,default):
     import patient_workflow as workflow
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
-    assert workflow.parse_arguments(['prepare']).project_dir == default
+    assert workflow.parse_arguments(['inspect']).project_dir == 'projects/patient'
     assert workflow.parse_arguments(['collect','--project','runs/custom']).project_dir == 'runs/custom'
     with pytest.raises(SystemExit):
         workflow.parse_arguments(['prepare','--study'])
@@ -87,11 +93,11 @@ def test_wrong_directory_mode_explained(tmp_path,monkeypatch,fractions,marker):
 
 
 @pytest.mark.parametrize('fractions',[0.0,None,[[0.0]],[-0.1],[1.0],[float('nan')],[float('inf')],[0.0,0.001]])
-def test_invalid_arrays(monkeypatch,fractions):
+def test_invalid_arrays(monkeypatch,fractions,tmp_path):
     import patient_workflow as workflow
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
-    with pytest.raises(ValueError):
-        workflow.main(['prepare'])
+    with pytest.raises(SystemExit):
+        workflow.main(['prepare','--project',str(tmp_path/'invalid')])
 
 
 @pytest.mark.parametrize('fractions',[[],[0.0]])
@@ -136,7 +142,7 @@ def test_inspect_lists_rois_and_optional_estimates(case,tmp_path,monkeypatch,cap
     from test_workflows import setup_workflow
     setup_workflow(monkeypatch,case,tmp_path,target=target)
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
-    monkeypatch.setattr(workflow,'read_roi_metadata',lambda *a: {'omitted_rois':[], 'original_dicom_rois':[{'number':38,'name':'TARGET'}]})
+    monkeypatch.setattr(workflow.patient,'read_roi_metadata',lambda *a: {'omitted_rois':[], 'original_dicom_rois':[{'number':38,'name':'TARGET'}]})
     root=tmp_path/'inspect'
     workflow.main(['inspect','--project',str(root)])
     output=capsys.readouterr().out
@@ -186,13 +192,13 @@ def test_rotation_study_saved_collection(case,tmp_path,monkeypatch,mode):
     from test_results import fake_results
     from scipy.io import loadmat
     setup_workflow(monkeypatch,case,tmp_path)
-    monkeypatch.setattr(workflow,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
+    monkeypatch.setattr(workflow.patient,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
     monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[0.,45.,90.])
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',[0.,.25,.5,.75])
     monkeypatch.setattr(workflow,'BEAMLET_EXECUTION',mode)
-    calls=[];original=workflow.generate_stf
+    calls=[];original=workflow.patient.generate_stf
     def once(*a):calls.append(1);return original(*a)
-    monkeypatch.setattr(workflow,'generate_stf',once)
+    monkeypatch.setattr(workflow.patient,'generate_stf',once)
     root=tmp_path/'study';workflow.prepare(root)
     assert len(calls)==1
     index=json.loads((root/'study.json').read_text());assert len(index['setups'])==12
@@ -213,7 +219,7 @@ def test_rotation_study_saved_collection(case,tmp_path,monkeypatch,mode):
     assert len(set(identities))==12
     moved=tmp_path/'moved';shutil.move(root,moved)
     monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG','invalid current settings')
-    monkeypatch.setattr(workflow,'load_patient',lambda *a:pytest.fail('saved collection loaded patient'))
+    monkeypatch.setattr(workflow.patient,'load_patient',lambda *a:pytest.fail('saved collection loaded patient'))
     workflow.collect(moved);workflow.forward(moved)
     for entry in index['setups']:
         assert (moved/entry['directory']/'derived/result.mat').exists()
@@ -227,7 +233,7 @@ def test_rotation_directory_defaults(monkeypatch,enabled,rotations,fractions,exp
     monkeypatch.setattr(workflow,'ENABLE_COLLIMATOR',enabled)
     monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',rotations)
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
-    assert workflow.parse_arguments(['prepare']).project_dir==expected
+    assert workflow.parse_arguments(['inspect']).project_dir=='projects/patient'
 
 
 def test_rotation_only_retains_toml(case,tmp_path,monkeypatch):
@@ -235,7 +241,7 @@ def test_rotation_only_retains_toml(case,tmp_path,monkeypatch):
     from test_workflows import setup_workflow
     from minibeam.geometry.configuration import GeometryConfig
     setup_workflow(monkeypatch,case,tmp_path)
-    monkeypatch.setattr(workflow,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
+    monkeypatch.setattr(workflow.patient,'read_roi_metadata',lambda *a: {'omitted_rois':[],'original_dicom_rois':[]})
     monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[22.5])
     monkeypatch.setattr(workflow,'SLIT_ENTRANCE_WIDTH_MM',None)
     monkeypatch.setattr(workflow,'NOMINAL_ENTRANCE_CTC_MM',None)

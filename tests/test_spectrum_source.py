@@ -67,7 +67,7 @@ def test_spectrum_independent_of_native_energy(case):
 
 def test_workflow_nominal_energy(tmp_path):
     import patient_workflow as workflow
-    plan=workflow.configure_plan(project_dir=tmp_path)
+    plan=workflow.patient.configure_plan(workflow.planning_settings(), project_dir=tmp_path)
     assert 'energy' not in plan.prop_stf
     assert not hasattr(workflow,'ENERGY_MEV')
 

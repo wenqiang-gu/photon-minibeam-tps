@@ -20,7 +20,7 @@ where = ["."]
 include = ["minibeam*"]
 
 [tool.setuptools.package-data]
-"minibeam.geometry" = ["config.toml"]
+"minibeam.geometry" = ["config.toml", "water_config.toml"]
 "minibeam.materials" = ["data/*.txt", "data/*.md"]
 
 [tool.pytest.ini_options]

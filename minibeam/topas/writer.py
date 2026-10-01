@@ -11,7 +11,7 @@ import SimpleITK as sitk
 from . import manifest as bundle_io
 from .manifest import planning_snapshot, implementation_hashes, json_data
 from ..geometry.patient import dicom_inputs, patient_parameters, axial_slice_for_isocenter
-from ..geometry.coordinates import grid_dict, patient_center, scoring_grid
+from ..geometry.coordinates import grid_dict, patient_center
 from ..materials import material_bytes
 from .scoring import scorer_parameters
 from .contracts import JobContext
@@ -110,7 +110,7 @@ class JobWriter:
                     description = self.source_model.describe(context)
                     if self.beamlet_execution == "combined" and "combined" not in description.job_modes:
                         raise ValueError("Source does not support combined jobs")
-                    if "beamlet" not in description.job_modes:
+                    if self.beamlet_execution == "separate" and "beamlet" not in description.job_modes:
                         raise ValueError("Source does not support per-beamlet jobs/particle selection")
                     expected_normalization = 'original_accelerator_history' if phase_space else 'independent_primary_photon'
                     if description.normalization != expected_normalization or not description.independent_histories:

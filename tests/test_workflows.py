@@ -7,12 +7,22 @@ import SimpleITK as sitk
 from scipy.io import loadmat
 from pyRadPlan.cst import create_voi
 import patient_workflow as workflow
+from minibeam import TOPASPhotonEngine
 
 
-def setup_workflow(monkeypatch, case, tmp_path, target='TARGET'):
+def setup_workflow(monkeypatch, case, tmp_path, target='TARGET', *, water=True):
     ct,_,cst,_,_=case
-    monkeypatch.setattr(workflow, 'load_patient', lambda _: (ct,cst))
-    for key,value in dict(CT_CROP_VOXELS=None,COLLIMATOR_ROTATION_DEG=[],COLLIMATOR_SHIFT_FRACTIONS=[],TARGET=target,GANTRY_ANGLES=[0.,90.],WATER=True,DICOM_DIR=str(tmp_path/'no-dicom'),HISTORIES_PER_JOB=10,ONLY_CENTRAL_BEAMLET=True,BEAMLET_EXECUTION='separate',SOURCE_TYPE='point').items():
+    monkeypatch.setattr(workflow.patient,'load_patient', lambda _: (ct,cst))
+    # Synthetic fixture transport only; production patient settings always use DICOM.
+    native_configure = workflow.patient.configure_plan
+    def synthetic_plan(settings, **kwargs):
+        plan = native_configure(settings, **kwargs)
+        plan.prop_dose_calc['water'] = water
+        if water:
+            plan.prop_dose_calc.pop('dicom_dir', None)
+        return plan
+    monkeypatch.setattr(workflow.patient,'configure_plan', synthetic_plan)
+    for key,value in dict(CT_CROP_VOXELS=None,COLLIMATOR_ROTATION_DEG=[],COLLIMATOR_SHIFT_FRACTIONS=[],TARGET=target,GANTRY_ANGLES=[0.,90.],DICOM_DIR=str(tmp_path/'no-dicom'),HISTORIES_PER_JOB=10,ONLY_CENTRAL_BEAMLET=True,BEAMLET_EXECUTION='separate',SOURCE_TYPE='point').items():
         monkeypatch.setattr(workflow,key,value)
     monkeypatch.setattr(sys,'argv',['patient_workflow.py','prepare','--project',str(tmp_path/'workflow')])
     return ct,cst
@@ -36,13 +46,13 @@ def test_explicit_target_only_and_native_export(monkeypatch,case,tmp_path):
 def test_target_must_exist_nonempty(monkeypatch,case,tmp_path,target):
     ct,cst=setup_workflow(monkeypatch,case,tmp_path,target)
     cst.vois.append(create_voi(name='EMPTY',grid=ct.grid,mask=np.zeros(ct.size[::-1],dtype=np.uint8),voi_type='OAR'))
-    with pytest.raises(ValueError,match='nonempty'): workflow.main()
+    with pytest.raises(SystemExit,match='nonempty'): workflow.main()
 
 
 def test_nonsquare_matrad_rejected(monkeypatch,case,tmp_path):
     setup_workflow(monkeypatch,case,tmp_path)
     monkeypatch.setattr(workflow,'DOSE_SPACING_MM',(3.,6.,3.))
-    with pytest.raises(ValueError,match='square transverse'): workflow.main()
+    with pytest.raises(SystemExit,match='square transverse'): workflow.main()
 
 
 def test_roi_metadata_and_omission_report(monkeypatch,case,tmp_path,capsys):
@@ -75,11 +85,11 @@ def test_globals_used_through_collection_and_forward(monkeypatch,case,tmp_path,s
         from test_phase_space import make_iaea
         monkeypatch.setattr(workflow,'PHASE_SPACE_FILE_BASES',[str(make_iaea(tmp_path/'source'))])
     calls=[]
-    original=workflow.TOPASPhotonEngine.prepare_jobs
+    original=TOPASPhotonEngine.prepare_jobs
     def counted_prepare(self,*args,**kwargs):
         calls.append(True)
         return original(self,*args,**kwargs)
-    monkeypatch.setattr(workflow.TOPASPhotonEngine,'prepare_jobs',counted_prepare)
+    monkeypatch.setattr(TOPASPhotonEngine,'prepare_jobs',counted_prepare)
     workflow.main()
     assert len(calls)==1
     root=tmp_path/'workflow'
@@ -101,9 +111,10 @@ def test_globals_used_through_collection_and_forward(monkeypatch,case,tmp_path,s
 
 
 def test_inspect_uses_global_directory_without_planning(monkeypatch,case,tmp_path):
+    monkeypatch.chdir(tmp_path)  # Never inspect the user's existing default project.
     setup_workflow(monkeypatch,case,tmp_path)
     seen=[]
-    monkeypatch.setattr(workflow,'load_patient',lambda directory: (seen.append(directory) or case[0],case[2]))
+    monkeypatch.setattr(workflow.patient,'load_patient',lambda directory: (seen.append(directory) or case[0],case[2]))
     monkeypatch.setattr(workflow,'TARGET',None)
     monkeypatch.setattr(sys,'argv',['patient_workflow.py','inspect'])
     workflow.main()
@@ -118,7 +129,7 @@ def test_native_bixel_modes(monkeypatch,case,tmp_path,only_central,generator,exe
     ct,cst=setup_workflow(monkeypatch,case,tmp_path)
     monkeypatch.setattr(workflow,'ONLY_CENTRAL_BEAMLET',only_central)
     monkeypatch.setattr(workflow,'BEAMLET_EXECUTION',execution)
-    plan=workflow.configure_plan(project_dir=tmp_path/'mode-test')
+    plan=workflow.patient.configure_plan(workflow.planning_settings(), project_dir=tmp_path/'mode-test')
     assert plan.prop_dose_calc['beamlet_execution']==execution
     assert plan.prop_stf['generator']==generator
     stf=generate_stf(ct,cst,plan)
@@ -145,7 +156,7 @@ def test_native_bixel_modes(monkeypatch,case,tmp_path,only_central,generator,exe
 def test_non_boolean_selection_rejected(monkeypatch,tmp_path,count):
     monkeypatch.setattr(workflow,'ONLY_CENTRAL_BEAMLET',count)
     with pytest.raises(ValueError,match='ONLY_CENTRAL_BEAMLET'):
-        workflow.configure_plan(project_dir=tmp_path/'unused')
+        workflow.patient.configure_plan(workflow.planning_settings(), project_dir=tmp_path/'unused')
 
 
 def test_automatic_job_parameters_and_mat_export(monkeypatch,case,tmp_path):
@@ -178,7 +189,7 @@ def test_opengl_configuration(monkeypatch, case, tmp_path, enabled):
     assert ('d:Gr/PatientView/AxesSize = 100 mm' in text) == enabled
     assert json.loads((root/'manifest.json').read_text())['enable_opengl'] == enabled
     monkeypatch.setattr(workflow, 'ENABLE_OPENGL', not enabled)
-    with pytest.raises(ValueError, match='different inputs/settings'):
+    with pytest.raises(SystemExit, match='different inputs/settings'):
         workflow.main()
 
 
@@ -191,7 +202,7 @@ def test_project_path_passed_without_prefix(monkeypatch,path,stage):
     assert calls==[path]
 
 
-@pytest.mark.parametrize('stage',['collect','forward'])
+@pytest.mark.parametrize('stage',['prepare','collect','forward'])
 def test_project_required_and_old_option_removed(stage):
     with pytest.raises(SystemExit):
         workflow.parse_arguments([stage])
@@ -216,4 +227,4 @@ def test_top_level_threads_invalid(monkeypatch, case, tmp_path, threads):
     setup_workflow(monkeypatch, case, tmp_path)
     monkeypatch.setattr(workflow, 'TOPAS_THREADS_PER_JOB', threads)
     with pytest.raises(ValueError, match='TOPAS_THREADS_PER_JOB must be a positive integer'):
-        workflow.configure_plan(project_dir=tmp_path/'unused')
+        workflow.patient.configure_plan(workflow.planning_settings(), project_dir=tmp_path/'unused')

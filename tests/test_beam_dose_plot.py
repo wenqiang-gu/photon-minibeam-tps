@@ -4,12 +4,12 @@ import pytest
 import SimpleITK as sitk
 from pyRadPlan.geometry import lps
 from minibeam.workflow.beam_dose_plot import beam_display_grid, project_beam, BeamDosePlots
-from minibeam.workflow.dose_plot import snapshot_images
+from minibeam.workflow.artifacts import snapshot_images
 from minibeam.topas import results
-from minibeam.workflow.artifacts import save_artifacts
+from minibeam.workflow.artifacts import save_planning_snapshot
 from minibeam.workflow.collection import collect_bundle
 from test_results import fake_results
-from test_dose_plot import fixture
+from test_snapshot_images import fixture
 
 
 def parameters(gantry=0.,couch=0.):
@@ -70,7 +70,7 @@ def test_plot_failures_and_zero_weights(case,monkeypatch):
     import minibeam.workflow.beam_dose_plot as plotting
     ct,plan,cst,stf,engine=case
     root=engine.prepare_jobs(ct,cst,stf);fake_results(root)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     original=plotting.project_beam
     def fail_first(ct,masks,dose,p):
         if p['gantry_angle']==0.:raise ValueError('first beam failed')
@@ -92,7 +92,7 @@ def test_shared_limits_and_warning_attribution(case):
     from minibeam.topas.manifest import load_manifest
     ct,plan,cst,stf,engine=case
     root=engine.prepare_jobs(ct,cst,stf);m=load_manifest(root)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     snapshot,_=planning_snapshot(root,m)
     warnings=[dict(job_id=m['jobs'][0]['job_id'])]
     plots=BeamDosePlots(snapshot,m,[1.,2.],warnings)

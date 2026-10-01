@@ -76,8 +76,8 @@ def test_bundle_crop(case,dicom_series,tmp_path):
     text=(root/'inputs/common.txt').read_text()
     assert 'RestrictVoxelsXMin = 4' in text and 'RestrictVoxelsXMax = 17' in text
     assert 'Patient/TransY = 3 mm' in text
-    from minibeam.workflow.artifacts import save_artifacts
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    from minibeam.workflow.artifacts import save_planning_snapshot
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     from minibeam.workflow.collection import planning_snapshot,indexing_report
     saved,_=planning_snapshot(root,m)
     assert saved['crop_metadata']['applied']
@@ -113,10 +113,10 @@ def test_crop_actual_transport(case,dicom_series,tmp_path):
 def test_saved_crop_collection(case,dicom_series,tmp_path,monkeypatch):
     import shutil
     from test_results import fake_results
-    from minibeam.workflow.artifacts import save_artifacts
+    from minibeam.workflow.artifacts import save_planning_snapshot
     from minibeam.workflow.collection import collect_bundle
     ct,plan,cst,stf,engine,root=prepare(case,dicom_series,tmp_path)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     fake_results(root)
     shutil.rmtree(engine.dicom_dir)
     moved=tmp_path/'moved'; shutil.move(root,moved)
@@ -156,8 +156,7 @@ def test_patient_workflow_crop(case,dicom_series,tmp_path,monkeypatch):
     import patient_workflow as w
     from test_workflows import setup_workflow
     ct,plan,cst,stf=air_case(case)
-    setup_workflow(monkeypatch,(ct,plan,cst,stf,None),tmp_path)
-    monkeypatch.setattr(w,'WATER',False)
+    setup_workflow(monkeypatch,(ct,plan,cst,stf,None),tmp_path, water=False)
     monkeypatch.setattr(w,'ENABLE_COLLIMATOR',False)
     monkeypatch.setattr(w,'CT_CROP_VOXELS',CROP)
     monkeypatch.setattr(w,'DOSE_SPACING_MM',(1.5,1.5,1.5))

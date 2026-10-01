@@ -3,7 +3,7 @@ from itertools import product
 import numpy as np
 import SimpleITK as sitk
 from pyRadPlan.geometry import lps
-from .dose_plot import snapshot_images
+from .artifacts import snapshot_images
 from ..topas.manifest import member_jobs
 
 
@@ -119,10 +119,12 @@ class BeamDosePlots:
     def consume(self, beam_index, dose):
         jobs = [(i,j) for i,j in enumerate(self.manifest['jobs']) if j['beam_index']==beam_index]
         parameters = self.manifest['planning']['beams'][beam_index-1]['parameters']
-        record = dict(beam_index=beam_index, gantry_angle_deg=parameters['gantry_angle'],
+        from ..topas.manifest import phase_space_selection
+        record = dict(phase_space_selection=phase_space_selection(self.manifest), beam_index=beam_index, gantry_angle_deg=parameters['gantry_angle'],
                       couch_angle_deg=parameters['couch_angle'], job_ids=[j['job_id'] for _,j in jobs],
                       weights=[float(self.weights[i]) for i,_ in jobs],
-                      weight_units=self.manifest['weight_units'], missing_targets=self.missing)
+                      weight_units=self.manifest['weight_units'], missing_targets=self.missing,
+                      calculation_region=self.manifest.get('provenance', {}).get('synthetic') == 'water')
         self.records.append(record)
         try:
             view = project_beam(self.ct, self.masks, dose, parameters)
@@ -165,14 +167,15 @@ class BeamDosePlots:
                 ax.plot(0,0,'+',color='cyan',ms=10,zorder=5)
                 slab = record['depth_slab']
                 low,high = slab['depth_voxel_centers_mm']
+                region = 'water' if record['calculation_region'] else 'target'
                 ax.set(title=f"Beam {index}: gantry {record['gantry_angle_deg']:g}°, couch {record['couch_angle_deg']:g}°\n"
-                             f"Maximum dose over target depth {low:.1f} to {high:.1f} mm",
+                             f"Maximum dose over {region} depth {low:.1f} to {high:.1f} mm",
                        xlabel='Beam transverse U (mm from isocenter)',ylabel='Beam transverse V (mm from isocenter)',
                        xlim=extent[:2],ylim=extent[2:])
                 ax.set_aspect('equal')
-                handles = [Line2D([],[],color='lime',label=name+' (projected)') for name in view['outlines']]
+                handles = [Line2D([],[],color='lime',label=name+(' (calculation region)' if record['calculation_region'] else ' (projected)')) for name in view['outlines']]
                 handles.append(Line2D([],[],color='cyan',marker='.',linestyle='None',
-                                      label='Bixel centers at isocenter plane'))
+                                      label=('Planning bixel reference positions' if record['phase_space_selection'] == 'all_forward' else 'Bixel centers at isocenter plane')))
                 handles.append(Line2D([],[],color='cyan',marker='+',linestyle='None',label='Isocenter'))
                 ax.legend(handles=handles,loc='upper right',fontsize=8)
                 fig.colorbar(artist,ax=ax,label='Maximum dose (Gy)',shrink=.75)
@@ -182,6 +185,8 @@ class BeamDosePlots:
                 if slab['fallback']: notices.append(slab['fallback'])
                 if self.missing: notices.append('Target unavailable: '+', '.join(self.missing))
                 if not view['dose'].any(): notices.append('This beam has zero dose.')
+                if record['phase_space_selection'] == 'all_forward':
+                    notices.append('All-forward source; bixels do not limit irradiation. Projection shows only the displayed depth slab.')
                 warnings = [d for d in self.diagnostics if d['job_id'] in record['job_ids']]
                 record['scorer_warnings'] = warnings
                 if warnings: notices.append(f'SCORER WARNINGS ({len(warnings)} jobs): validity requires user review; see indexing.md.')
@@ -212,7 +217,8 @@ def beam_plot_report(plot):
         if record['status']=='complete':
             name=record['path'].split('/')[-1]
             low,high=record['depth_slab']['depth_voxel_centers_mm']
-            text+=f"- [Beam {record['beam_index']}]({name}): target depth {low:.3f} to {high:.3f} mm.\n"
+            region = 'water calculation region' if record.get('calculation_region') else 'target'
+            text+=f"- [Beam {record['beam_index']}]({name}): {region} depth {low:.3f} to {high:.3f} mm.\n"
             if record['depth_slab']['fallback']:text+='  '+record['depth_slab']['fallback']+'\n'
         else:text+=f"- Beam {record['beam_index']}: plotting failed: {record['error']}. Saved dose remains available.\n"
     return text

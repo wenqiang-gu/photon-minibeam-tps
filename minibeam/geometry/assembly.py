@@ -3,7 +3,7 @@ from dataclasses import asdict, is_dataclass
 from types import SimpleNamespace
 import math
 import numpy as np
-from .mlc_jaws import (JawStage, RoundedMLCTip, _rounded_mlc_polygon,
+from .mlc_jaws import (JawStage, RoundedMLCTip,
                        _render_rounded_mlc_solid, _render_jaw_solid)
 from .apertures import APERTURE_TYPES
 from .spatial import beam_basis, corners, overlaps_box

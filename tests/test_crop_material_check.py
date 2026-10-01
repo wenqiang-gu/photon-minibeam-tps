@@ -53,7 +53,7 @@ def test_preview_out_of_slice_flags(case,tmp_path):
 def test_saved_bypass_and_fingerprint(case,tmp_path,dicom_series):
     from minibeam import TOPASPhotonEngine
     from minibeam.topas.manifest import load_manifest
-    from minibeam.workflow.artifacts import save_artifacts
+    from minibeam.workflow.artifacts import save_planning_snapshot
     from minibeam.workflow.collection import collect_bundle
     from test_results import fake_results
     from scipy.io import loadmat
@@ -61,7 +61,7 @@ def test_saved_bypass_and_fingerprint(case,tmp_path,dicom_series):
     engine=TOPASPhotonEngine(plan,bundle_dir=str(tmp_path/'bundle'),ct_crop_voxels=CROP,
         enforce_ct_crop_protection=False,dicom_dir=str(dicom_series(ct.cube_hu)))
     root=engine.prepare_jobs(ct,cst,stf)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     m=load_manifest(root);assert m['crop_metadata']['protection_bypassed']
     fake_results(root)
     collect_bundle(root,'collect');collect_bundle(root,'forward')

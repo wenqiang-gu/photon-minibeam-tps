@@ -2,7 +2,7 @@
 """Print a summary and full DICOM data set for an RT Plan.
 
 Example:
-    .venv/bin/python test/print_rtplan_info.py \
+    .venv/bin/python tools/print_rtplan_info.py \
         /Users/wgu/Local/MLC/RP.1.2.246.352.71.5.43216483251.92316.20260918102317.dcm
 """
 

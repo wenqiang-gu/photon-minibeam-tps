@@ -96,7 +96,7 @@ def test_patient_candidate_remains_blocked():
         pytest.skip('Set PHOTON_TPS_DICOM for patient collision investigation')
     ct,cst=load_patient(directory)
     select_target(cst,'PTV2017fw')
-    plan=workflow.configure_plan(project_dir=Path('unused'))
+    plan=workflow.patient.configure_plan(workflow.planning_settings(), workflow.planning_settings(), project_dir=Path('unused'))
     plan.prop_stf.update(gantry_angles=[45.,135.,225.,315.],couch_angles=[0.]*4)
     stf=generate_stf(ct,cst,plan)
     head=TreatmentHead(candidate_config())
@@ -120,12 +120,12 @@ def test_patient_cli_explains_collision_without_traceback(case,tmp_path,monkeypa
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',[])
     monkeypatch.setattr(workflow,'COLLIMATOR_ROTATION_DEG',[])
     monkeypatch.setattr(workflow,'parse_arguments',lambda argv=None: Namespace(stage='prepare',project_dir=str(tmp_path/'patient')))
-    monkeypatch.setattr(workflow,'load_patient',lambda _: (ct,cst))
-    monkeypatch.setattr(workflow,'read_roi_metadata',lambda *_: {'omitted_rois': []})
+    monkeypatch.setattr(workflow.patient,'load_patient',lambda _: (ct,cst))
+    monkeypatch.setattr(workflow.patient,'read_roi_metadata',lambda *_: {'omitted_rois': []})
     monkeypatch.setattr(workflow,'TARGET','TARGET')
     def collision(*args,**kwargs):
         raise GeometryCollisionError('See patient diagnostics: geometry.pdf')
-    monkeypatch.setattr(workflow.TOPASPhotonEngine,'prepare_jobs',collision)
+    monkeypatch.setattr(TOPASPhotonEngine,'prepare_jobs',collision)
     with pytest.raises(SystemExit,match='Geometry preparation stopped:.*patient diagnostics') as raised:
         workflow.main()
     assert raised.value.__suppress_context__

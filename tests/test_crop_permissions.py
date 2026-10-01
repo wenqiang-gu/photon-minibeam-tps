@@ -65,7 +65,7 @@ def test_preview_on_failure(case,tmp_path):
 
 def test_saved_allowed_clipping(case,tmp_path,dicom_series):
     from minibeam import TOPASPhotonEngine
-    from minibeam.workflow.artifacts import save_artifacts
+    from minibeam.workflow.artifacts import save_planning_snapshot
     from minibeam.workflow.collection import collect_bundle
     from minibeam.topas.manifest import load_manifest
     from test_results import fake_results
@@ -74,7 +74,7 @@ def test_saved_allowed_clipping(case,tmp_path,dicom_series):
     engine=TOPASPhotonEngine(plan,ct_crop_voxels=CROP,enforce_ct_crop_protection=False,
         dicom_dir=str(dicom_series(ct.cube_hu)),bundle_dir=str(tmp_path/'run'))
     root=engine.prepare_jobs(ct,cst,stf)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     fake_results(root)
     collect_bundle(root,'collect');collect_bundle(root,'forward')
     data=loadmat(root/'derived/result.mat',simplify_cells=True)
@@ -105,8 +105,8 @@ def test_allowed_couch_transport(case,dicom_series,tmp_path):
 def test_inspect_without_target_writes_preview(case,tmp_path,monkeypatch):
     import patient_workflow as w
     ct,_,cst,_=couch_case(case)
-    monkeypatch.setattr(w,'load_patient',lambda _: (ct,cst))
-    monkeypatch.setattr(w,'read_roi_metadata',lambda *a: {'omitted_rois':[], 'original_dicom_rois':[]})
+    monkeypatch.setattr(w.patient,'load_patient',lambda _: (ct,cst))
+    monkeypatch.setattr(w.patient,'read_roi_metadata',lambda *a: {'omitted_rois':[], 'original_dicom_rois':[]})
     monkeypatch.setattr(w,'TARGET',None)
     monkeypatch.setattr(w,'CT_CROP_VOXELS',CROP)
     monkeypatch.setattr(w,'ENFORCE_CT_CROP_PROTECTION',False)
@@ -120,7 +120,7 @@ def test_legacy_policy_collection_after_relocation(case,tmp_path,dicom_series):
     import json,shutil
     from minibeam import TOPASPhotonEngine
     from minibeam.topas.manifest import load_manifest,digest_json
-    from minibeam.workflow.artifacts import save_artifacts
+    from minibeam.workflow.artifacts import save_planning_snapshot
     from minibeam.workflow.collection import collect_bundle
     from test_results import fake_results
     ct,plan,cst,stf=couch_case(case)
@@ -136,7 +136,7 @@ def test_legacy_policy_collection_after_relocation(case,tmp_path,dicom_series):
         for key in ('blocking','disposition','clipping_extent','is_target'):row.pop(key)
     m.pop('bundle_id');m['bundle_id']=digest_json(m)
     (root/'manifest.json').write_text(json.dumps(m))
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     fake_results(root)
     shutil.rmtree(engine.dicom_dir)
     moved=tmp_path/'relocated';shutil.move(root,moved)

@@ -54,6 +54,8 @@ def load_manifest(root):
         raise ValueError('Unsupported beamlet execution mode')
     if combined and (manifest['schema_version'] != 3 or any(j['ray_index'] != 0 or j['beamlet_index'] != 0 for j in jobs)):
         raise ValueError('Aggregate jobs must use non-native zero ray/bixel sentinels')
+    if phase_space_selection(manifest) == 'all_forward' and not combined:
+        raise ValueError('Saved all_forward source requires combined execution')
     members = [m for j in jobs for m in j.get('members', [j])]
     identities = [(j['beam_index'], j['ray_index'], j['beamlet_index']) for j in members]
     if len(set(identities)) != len(members) or any(type(v) is not int or v < 1 for row in identities for v in row):
@@ -149,3 +151,13 @@ def member_jobs(manifest):
                     source.pop('aim_lps_mm',None)
                 item['source'] = source
             yield item
+
+
+def phase_space_selection(manifest):
+    """Read saved source semantics; missing mode retains legacy field selection."""
+    if manifest.get('normalization') != 'original_accelerator_history':
+        return 'not_applicable'
+    modes = {j.get('source', {}).get('selection_mode', 'field') for j in manifest['jobs']}
+    if len(modes) != 1 or not modes <= {'field', 'all_forward'}:
+        raise ValueError('Inconsistent or unsupported saved phase-space selection')
+    return modes.pop()

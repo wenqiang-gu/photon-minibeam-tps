@@ -64,7 +64,7 @@ def test_disabled_workflow_ignores_overrides_and_preserves_hardware(case,tmp_pat
     monkeypatch.setattr(GeometryConfig,'load',load)
     for index,fractions in enumerate([[],[0.,0.25,0.5,0.75],{'invalid':'inactive'}]):
         monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
-        assert workflow.parse_arguments(['prepare']).project_dir=='projects/patient'
+        assert workflow.parse_arguments(['inspect']).project_dir=='projects/patient'
         root=tmp_path/f'without-{index}'
         calls.clear()
         workflow.main(['prepare','--project',str(root)])
@@ -116,11 +116,11 @@ def test_reenable_restores_layout_and_disabled_rejects_study_root(tmp_path,monke
     fractions=[0.,0.25,0.5,0.75]
     monkeypatch.setattr(workflow,'COLLIMATOR_SHIFT_FRACTIONS',fractions)
     monkeypatch.setattr(workflow,'ENABLE_COLLIMATOR',False)
-    assert workflow.parse_arguments(['prepare']).project_dir=='projects/patient'
+    assert workflow.parse_arguments(['inspect']).project_dir=='projects/patient'
     (tmp_path/'study.json').write_text('{}')
     with pytest.raises(SystemExit,match='study directory'):
         workflow.main(['prepare','--project',str(tmp_path)])
     monkeypatch.setattr(workflow,'ENABLE_COLLIMATOR',True)
-    assert workflow.parse_arguments(['prepare']).project_dir=='projects/patient-slit-study'
+    assert workflow.parse_arguments(['inspect']).project_dir=='projects/patient'
     np.testing.assert_array_equal(effective_shift_fractions(enable_collimator=True,values=fractions),fractions)
     assert workflow.COLLIMATOR_SHIFT_FRACTIONS is fractions

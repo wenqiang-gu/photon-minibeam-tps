@@ -1,3 +1,4 @@
+from minibeam import TOPASPhotonEngine
 import json
 import shutil
 import numpy as np
@@ -23,10 +24,10 @@ def test_saved_collection_independent_and_relocated(case, monkeypatch, tmp_path,
     before = sha256(moved/'derived/steering.mat')
     def forbidden(*a,**kw):
         pytest.fail('Collection touched preparation inputs')
-    monkeypatch.setattr(workflow,'load_patient', forbidden)
-    monkeypatch.setattr(workflow,'generate_stf', forbidden)
-    monkeypatch.setattr(workflow,'resolve_geometry', forbidden)
-    monkeypatch.setattr(workflow.TOPASPhotonEngine,'prepare_jobs', forbidden)
+    monkeypatch.setattr(workflow.patient,'load_patient', forbidden)
+    monkeypatch.setattr(workflow.patient,'generate_stf', forbidden)
+    monkeypatch.setattr(workflow.patient,'resolve_geometry', forbidden)
+    monkeypatch.setattr(TOPASPhotonEngine,'prepare_jobs', forbidden)
     monkeypatch.setattr(workflow,'ENABLE_COLLIMATOR', 'invalid inactive value')
     monkeypatch.setattr(workflow,'SOURCE_TYPE', 'invalid inactive source')
     for stage in ('collect','forward'):

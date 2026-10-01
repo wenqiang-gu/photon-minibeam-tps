@@ -10,7 +10,7 @@ from minibeam import TOPASPhotonEngine
 from minibeam.sources.bixels import groups, contains
 from minibeam.sources.iaea import TOPAS_DTYPE
 from minibeam.topas.manifest import load_manifest, member_jobs
-from minibeam.workflow.artifacts import save_artifacts
+from minibeam.workflow.artifacts import save_planning_snapshot
 from minibeam.workflow.collection import collect_bundle
 from test_results import fake_results
 
@@ -70,7 +70,7 @@ def test_point_job_budget_and_combined_normalization(case,tmp_path):
             np.testing.assert_allclose(sitk.GetArrayFromImage(result['physical_dose']).ravel(),dij.physical_dose.flat[0]@[3,7])
             expected_error=np.sqrt((3*2e-10)**2/100+(7*4e-10)**2/100)
             assert sitk.GetArrayFromImage(result['physical_dose_std_error']).ravel()[0]==pytest.approx(expected_error)
-            save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+            save_planning_snapshot(ct,cst,plan,stf,root,{})
             collect_bundle(root,'collect')
             from scipy.io import loadmat
             exported=loadmat(root/'derived/result.mat',simplify_cells=True)
@@ -217,7 +217,7 @@ def test_native_combined_api_and_forward_artifacts(case,tmp_path):
     plan.prop_dose_calc.update(beamlet_execution='combined',water=True)
     engine=TOPASPhotonEngine(plan)
     root=engine.prepare_jobs(ct,cst,stf)
-    save_artifacts(ct,cst,plan,stf,root,'prepare',{})
+    save_planning_snapshot(ct,cst,plan,stf,root,{})
     before=sha256(root/'derived/steering.mat')
     fake_results(root)
     dij=calc_dose_influence(ct,cst,stf,plan)
