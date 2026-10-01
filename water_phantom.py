@@ -40,7 +40,7 @@ TOPAS_THREADS_PER_JOB = 4
 # None selects the independent packaged water_config.toml.
 # Its field.width_mm/height_mm define the square field AT THE WATER SURFACE.
 GEOMETRY_CONFIG = None
-ENABLE_COLLIMATOR = True  # MLC/jaws retain their TOML settings
+ENABLE_COLLIMATOR = False  # MLC/jaws retain their TOML settings
 DOSE_SPACING_MM = None  # native spacing; optionally (dx, dy, dz) in mm
 ENABLE_OPENGL = False
 # Exposure of the combined field, in saved source units (not MU).

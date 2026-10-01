@@ -154,3 +154,22 @@ associations for reference; it does not partition that column's incident fluence
 Bixel dots in beam plots are labeled as planning reference positions. The same
 selected-target depth slab is used for projection, so these figures can omit dose
 outside that slab; inspect the full scoring-grid dose for peripheral contributions.
+
+## Collection speed and progress
+
+Both collect and forward parse CSVs in bounded chunks of about 100,000 rows and
+validate the numeric columns with array operations. Every bin, including zero-dose
+bins and zero-weight jobs, is still checked for completeness, duplicates, valid
+coordinates, histories and consistent statistics. Existing CSV files need no
+conversion or new simulation.
+
+Jobs are read sequentially. The terminal shows each job's index, ID, path and file
+size, throttled bin progress for long files, and elapsed time at completion.
+Collect builds sparse columns; forward accumulates dose without retaining the full
+matrix. Chunk buffers are bounded, but dense per-job dose/variance arrays and a
+per-grid duplicate-detection mask still scale with grid size. Collection additionally
+needs memory for the accumulated sparse matrices.
+
+`TOPAS_THREADS_PER_JOB` controls particle transport, not collection. Parsing speed,
+shared-storage throughput, grid size, and sparse MATLAB export can all affect total
+runtime; faster CSV parsing does not eliminate those other costs.

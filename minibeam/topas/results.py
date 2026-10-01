@@ -1,12 +1,13 @@
 """Assemble native Dij or streaming forward dose from validated TOPAS scores."""
 from pathlib import Path
+import time
 import numpy as np
 import scipy.sparse as sp
 import SimpleITK as sitk
 from pyRadPlan.core import Grid
 from pyRadPlan.dij import Dij
 from . import manifest as bundle_io
-from .scoring import score_rows
+from .scoring import score_chunks
 from .contracts import ResultsPendingError
 
 def _image(vector, grid):
@@ -21,14 +22,27 @@ def iter_scores(bundle_dir, *, manifest=None, diagnostics=None):
     root = Path(bundle_dir)
     manifest = bundle_io.load_manifest(root) if manifest is None else manifest
     nvox = int(np.prod(manifest["dose_grid"]["dimensions"]))
-    for job in manifest["jobs"]:
+    overall_start = time.monotonic()
+    for number, job in enumerate(manifest["jobs"], 1):
         output = bundle_io.bundle_path(root, job["output"])
         if not output.is_file():
             raise ResultsPendingError(f"Missing result for {job['job_id']}; run TOPAS on {job['parameter_file']} from {root}")
+        started = last_update = time.monotonic()
+        print(f"Reading {number}/{len(manifest['jobs'])}: {job['job_id']} — {output} "
+              f"({output.stat().st_size / 1024**2:.1f} MiB)", flush=True)
+        processed = 0
         dose = np.zeros(nvox)
         variance = np.zeros(nvox)
-        for row, value, var in score_rows(output, job, manifest["dose_grid"], diagnostics=diagnostics, normalization=manifest["normalization"]):
+        for row, value, var in score_chunks(output, job, manifest["dose_grid"], diagnostics=diagnostics, normalization=manifest["normalization"]):
             dose[row], variance[row] = value, var
+            processed += len(row)
+            now = time.monotonic()
+            if now - last_update >= 5:
+                print(f"  {job['job_id']}: {processed:,}/{nvox:,} bins "
+                      f"({processed/nvox:.0%}); {now-started:.1f} s", flush=True)
+                last_update = now
+        print(f"Validated {number}/{len(manifest['jobs'])}: {job['job_id']} in "
+              f"{time.monotonic()-started:.1f} s; total elapsed {time.monotonic()-overall_start:.1f} s", flush=True)
         yield job, dose, variance
 
 def collect_results(bundle_dir, max_matrix_bytes, *, manifest=None, diagnostics=None) -> Dij:

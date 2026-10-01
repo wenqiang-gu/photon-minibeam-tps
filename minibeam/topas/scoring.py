@@ -1,75 +1,123 @@
 """TOPAS scorer configuration and strict CSV interpretation."""
 import csv
+import numpy as np
 import math
 import re
 
-def score_rows(path, job, grid, *, diagnostics=None, normalization=None):
-    """Yield (native row, Gy/represented source history, variance of estimated mean).
+# Bound parsing buffers independently of the dose-grid size. The per-grid seen
+# mask remains necessary: files may reorder bins, even across chunk boundaries.
+_CHUNK_ROWS = 100_000
+_COORDINATES = re.compile(r'^\s*[+-]?[0-9]+\s*,\s*[+-]?[0-9]+\s*,\s*[+-]?[0-9]+\s*,')
 
-    Parse every explicit bin. Zero bins must be present; truncated output is an
-    error. Histories_with_Scorer_Active is the denominator, never Count_in_Bin.
+
+def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
+                 chunk_rows=_CHUNK_ROWS):
+    """Yield arrays of native row indices, normalized dose and mean variance.
+
+    Parse and validate zero bins too; sparsity never excuses missing records.
+    Coordinate tokens must be integers, not silently truncated floating values.
     """
-    nx, ny, nz = grid["dimensions"]
+    if type(chunk_rows) is not int or chunk_rows < 1:
+        raise ValueError('chunk_rows must be a positive integer')
+    nx, ny, nz = grid['dimensions']
     size = nx * ny * nz
-    seen = bytearray(size)
-    headers = []
-    count = 0
-    with open(path, newline="") as stream:
+    seen = np.zeros(size, dtype=bool)
+    headers, lines = [], []
+    count, started = 0, False
+    single = False
+
+    def parse(lines):
+        nonlocal count
+        if not single and any(_COORDINATES.match(line) is None for line in lines):
+            raise ValueError('Malformed TOPAS CSV row: bin coordinates must be integer tokens')
+        try:
+            values = np.loadtxt(lines, delimiter=',', comments=None, ndmin=2)
+        except ValueError as exc:
+            raise ValueError('Malformed TOPAS CSV row: expected coordinate/statistic columns') from exc
+        expected = 4 if single else 7
+        if values.shape != (len(lines), expected):
+            raise ValueError('Expected X,Y,Z,Sum,Mean,Histories,Standard_Deviation columns')
+        stats = values if single else values[:, 3:]
+        if not np.isfinite(values).all():
+            raise ValueError('Nonfinite TOPAS score')
+        total, mean, histories, sd = stats.T
+        if np.any(stats[:, [0, 1, 3]] < 0):
+            raise ValueError('Negative dose/statistics')
+        if np.any(histories != job['histories']) or np.any(histories < 2):
+            raise ValueError('Actual scorer history count differs from the requested count')
+        per_history = total / histories
+        # Match math.isclose's symmetric relative tolerance, not np.isclose's
+        # asymmetric reference value or additive absolute tolerance.
+        tolerance = np.maximum(1e-30, 2e-7 * np.maximum(np.abs(per_history), np.abs(mean)))
+        if np.any(np.abs(per_history - mean) > tolerance):
+            raise ValueError('TOPAS Sum/Histories disagrees with Mean')
+        if single:
+            rows = np.zeros(len(lines), dtype=np.int64)
+        else:
+            xyz = values[:, :3]
+            if np.any(xyz < 0) or np.any(xyz >= [nx, ny, nz]):
+                raise ValueError('Scorer bin outside expected grid')
+            x, y, z = xyz.astype(np.int64).T
+            rows = x + nx * (y + ny * z)
+        if np.any(seen[rows]) or np.unique(rows).size != rows.size:
+            raise ValueError('Duplicate scorer bin')
+        seen[rows] = True
+        count += len(rows)
+        denominator = job.get('normalization_histories', job['histories'])
+        scale = histories / denominator
+        return rows, total / denominator, sd * sd / histories * scale * scale
+
+    with open(path, newline='') as stream:
         for line in stream:
-            if line.startswith("#"):
-                if count:
-                    raise ValueError("Unexpected header after scorer data")
+            if line.startswith('#'):
+                if started:
+                    raise ValueError('Unexpected header after scorer data')
                 headers.append(line.rstrip())
                 continue
             if not line.strip():
                 continue
-            if not count:
+            if not started:
                 _validate_header(headers, job, grid)
                 warning = _scorer_warning(headers)
                 if warning:
-                    warning.update(job_id=job.get("job_id", job["scorer"]), csv_path=str(path),
-                                   histories=job["histories"], normalization=normalization)
+                    warning.update(job_id=job.get('job_id', job['scorer']), csv_path=str(path),
+                                   histories=job['histories'], normalization=normalization)
                     print(f"Scorer warning for {warning['job_id']}: {path}\n"
                           f"  {warning['warning_text']}\n"
                           f"  Unscored steps: {warning['unscored_steps']}; "
                           f"unscored energy: {warning['unscored_energy_mev']:.9g} MeV\n"
                           f"  Histories: {job['histories']:,}; normalization: {normalization or 'see saved manifest'}\n"
-                          "  Validity requires user review; statistical uncertainty does not account for missing energy.")
+                          '  Validity requires user review; statistical uncertainty does not account for missing energy.')
                     if diagnostics is not None:
                         diagnostics.append(warning)
-            fields = next(csv.reader([line]))
-            if size == 1 and len(fields) == 4 and not any(re.match(r'# [XYZ] in ', h) for h in headers):
-                fields = ['0','0','0'] + fields
-            if len(fields) != 7:
-                raise ValueError("Expected X,Y,Z,Sum,Mean,Histories,Standard_Deviation columns")
-            try:
-                xyz = [int(s.strip()) for s in fields[:3]]
-                total, mean, histories, sd = map(float, fields[3:])
-            except ValueError as exc:
-                raise ValueError("Malformed TOPAS CSV row") from exc
-            if not all(math.isfinite(v) for v in [total, mean, histories, sd]):
-                raise ValueError("Nonfinite TOPAS score")
-            if any(v < 0 for v in [total, mean, sd]):
-                raise ValueError("Negative dose/statistics")
-            if histories != job["histories"] or histories < 2:
-                raise ValueError("Actual scorer history count differs from the requested count")
-            # OpenTOPAS 4.2.p3 stores some score accumulators in float precision;
-            # real output differs by ~6e-8 even with 16-digit CSV formatting.
-            if not math.isclose(total / histories, mean, rel_tol=2e-7, abs_tol=1e-30):
-                raise ValueError("TOPAS Sum/Histories disagrees with Mean")
-            x, y, z = xyz
-            if not (0 <= x < nx and 0 <= y < ny and 0 <= z < nz):
-                raise ValueError("Scorer bin outside expected grid")
-            row = x + nx * (y + ny * z)
-            if seen[row]:
-                raise ValueError("Duplicate scorer bin")
-            seen[row] = 1
-            count += 1
-            denominator = job.get('normalization_histories', histories)
-            scale = histories / denominator
-            yield row, total / denominator, sd * sd / histories * scale * scale
+                single = size == 1 and not any(re.match(r'# [XYZ] in ', h) for h in headers) and len(line.split(',')) == 4
+                started = True
+            # TOPAS normally writes unquoted numbers. Preserve the legacy CSV
+            # reader's quoted-number support without slowing ordinary numeric rows.
+            if '"' in line:
+                try:
+                    fields = next(csv.reader([line], strict=True))
+                    if any(',' in field or '\n' in field or '\r' in field for field in fields):
+                        raise ValueError('Malformed TOPAS CSV numeric field')
+                    line = ','.join(fields) + '\n'
+                except csv.Error as exc:
+                    raise ValueError('Malformed TOPAS CSV row') from exc
+            lines.append(line)
+            if len(lines) == chunk_rows:
+                yield parse(lines)
+                lines = []
+        if lines:
+            yield parse(lines)
     if count != size:
-        raise ValueError(f"Incomplete scorer grid: expected {size} bins, found {count}")
+        raise ValueError(f'Incomplete scorer grid: expected {size} bins, found {count}')
+
+
+def score_rows(path, job, grid, *, diagnostics=None, normalization=None):
+    """Compatibility row iterator; production assembly consumes score_chunks."""
+    for rows, dose, variance in score_chunks(path, job, grid, diagnostics=diagnostics,
+                                            normalization=normalization):
+        for row, value, var in zip(rows, dose, variance):
+            yield int(row), float(value), float(var)
 
 
 _UNSCORED_WARNING = "# Warning: Some steps were not scored due to touchable returning an invalid index number."

@@ -19,6 +19,8 @@ as the patient and water workflows are evaluated.
 - [ ] Propagate uncertainty for shared phase-space histories, accounting for correlations between dose-matrix columns.
 - [ ] Calibrate dose to measured output and monitor units under clearly defined reference conditions.
 - [ ] Implement fluence-map optimization using separate beamlet dose matrices, with target and organ-at-risk objectives.
+- [ ] Add MLC leaf shift for beamlet delivery (and recalcualte dose for dose validation?)
+- [ ] How to convert an optimized fluence map to deliverable MLC and other weights?
 - [ ] Calculate dose delivery with realistic geometry (MLC shape) and non-beamlet particles
 
 

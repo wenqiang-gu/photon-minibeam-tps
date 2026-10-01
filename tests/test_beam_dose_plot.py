@@ -54,11 +54,11 @@ def test_streaming_beams_sum_and_read_once(case,monkeypatch,mode):
     engine=TOPASPhotonEngine(plan,water=True,beamlet_execution=mode)
     root=engine.prepare_jobs(ct,cst,stf);m=fake_results(root)
     weights=np.arange(1,len(m['jobs'])+1,dtype=float)
-    calls=[];original=results.score_rows
+    calls=[];original=results.score_chunks
     def counted(*args,**kwargs):
         calls.append(args[1]['job_id'])
         yield from original(*args,**kwargs)
-    monkeypatch.setattr(results,'score_rows',counted)
+    monkeypatch.setattr(results,'score_chunks',counted)
     beams={}
     result=results.collect_forward(weights,root,on_beam=lambda b,d:beams.update({b:sitk.GetArrayFromImage(d)}))
     assert calls==[j['job_id'] for j in m['jobs']]
