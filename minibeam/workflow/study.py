@@ -89,11 +89,12 @@ def run_study(stage, root, ct, cst, plan, native, metadata, *, target,
     from ..geometry.cropping import resolve_grids
     _, grid, _ = resolve_grids(ct, plan.prop_dose_calc.get('ct_crop_voxels'), plan.prop_dose_calc.get('dose_spacing_mm'), cst, plan.prop_dose_calc.get('enforce_ct_crop_protection', True))
     count = len(native.beams) if plan.prop_dose_calc.get('beamlet_execution')=='combined' else native.total_number_of_bixels
+    batches = plan.prop_dose_calc.get('number_of_batches',1)
     total = len(setups)*count
     for name, fraction, angle, config in setups:
         print(f'{name}: baseline Z {geometry.aperture.rotation_z_deg:g} deg + additional {angle if angle is not None else 0:g} deg = resolved Z {config.aperture.rotation_z_deg:g} deg; shift {config.aperture.lateral_shift_mm:g} mm; '
-              + workload_estimate(grid, count))
-    print(f'Aggregate: {workload_estimate(grid, total)}')
+              + workload_estimate(grid, count, batches))
+    print(f'Aggregate: {workload_estimate(grid, total, batches)}')
     steering = [(name, fraction, angle, enrich_stf(native, config)) for name,fraction,angle,config in setups]
     for name, _, _, stf in steering:
         aperture = beam_geometry_records(stf)[0]['resolved']['aperture']

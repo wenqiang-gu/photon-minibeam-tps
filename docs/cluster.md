@@ -39,8 +39,9 @@ histories in an already prepared project and expect its old fingerprint to match
 
 ## Optional Slurm submission
 
-Copy the three root helper files under `projects/` along with your projects:
-`submit_topas.sh`, `submit_topas.py`, and `topas_worker.sh`. The submission machine
+Copy the root helper files under `projects/` along with your projects:
+`submit_topas.sh`, `submit_topas.py`, `topas_worker.sh`, `add_batches.sh`, and
+`add_batches.py`. The submission machine
 needs Python 3.8+ standard library; the worker needs Bash and TOPAS. Python 3.12 also
 works. A separate pyRadPlan installation is unnecessary for submission.
 
@@ -105,3 +106,51 @@ sstat -j 123456.batch --format=JobID,AveCPU,AveRSS,MaxRSS
 
 Slurm accounting availability depends on cluster configuration. TOPAS `Real`/shell
 elapsed time measures wall time; user and system CPU totals are not added to wall time.
+
+## Repeated transport batches
+
+Set `NUMBER_OF_BATCHES` (initial total) and `RANDOM_SEED` in either workflow before
+preparation. To add batches later, use saved inputs only:
+
+```sh
+# From the repository root; adds three batches, not a total of three.
+./projects/add_batches.sh projects/my-patient --count 3 --dry-run
+./projects/add_batches.sh projects/my-patient --count 3
+# Or, from projects/:
+./add_batches.sh my-patient/shift_000 --count 2
+```
+
+`DEFAULT_ADDITIONAL_BATCHES=3` at the top of `add_batches.sh` is editable; `--count`
+overrides it. A study adds the requested number to every setup. This command does
+not submit jobs. Copy `add_batches.sh` and `add_batches.py` alongside the submission
+scripts on the cluster; only Python 3.8+ standard library is needed. No pyRadPlan,
+original DICOM or original accelerator phase-space files are opened by this helper.
+
+Batch `000` is the original `jobs/` and `results/`; after adding batches,
+`batches/batch_000/` is also a selectable reference to that original batch. Additional batches are under
+`batches/batch_001/`, with a signed `batches.json` index at the setup root. All batches
+share `inputs/` and the planning snapshot. **Run TOPAS from the setup root**, including
+when manually running an additional batch:
+
+```sh
+cd projects/my-patient/shift_000
+topas batches/batch_001/jobs/bixel_000001.txt
+```
+
+Submit a setup/study to submit all its prepared batches, or select just one:
+
+```sh
+./projects/submit_topas.sh projects/my-patient/shift_000/batches/batch_001
+```
+
+Submission prints its selected batches; history records include batch IDs. It does
+not automatically skip previously submitted jobs. Each physical job has its own
+seed, scorer identity and output path. `PhaseSpaceMultipleUse` stays at 1. Point
+sources also reuse their saved sampled replay particles: changing the seed repeats
+transport, not source sampling. Transfer the entire setup with its batch index and
+batch directories; a batch folder alone is not self-contained.
+
+Batch appending validates saved input hashes and uses an exclusive lock plus atomic
+index publication. A leftover lock or an unindexed batch folder after an interrupted
+process requires inspection before retrying; do not remove it while another writer
+is active. Study additions are atomic per setup, not a transaction across the study.

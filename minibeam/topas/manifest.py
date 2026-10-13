@@ -137,7 +137,11 @@ def planning_snapshot(plan_info, stf, cst):
 
 def implementation_hashes(package_root=None):
     root = Path(package_root) if package_root else Path(__file__).parents[1]
-    return {p.relative_to(root).as_posix(): sha256(p) for p in sorted(root.rglob("*.py"))}
+    hashes = {p.relative_to(root).as_posix(): sha256(p) for p in sorted(root.rglob("*.py"))}
+    if package_root is None:
+        from projects import add_batches
+        hashes['projects/add_batches.py'] = sha256(add_batches.__file__)
+    return hashes
 
 
 def member_jobs(manifest):

@@ -85,31 +85,38 @@ def thread_setting(job, root, cache=None):
 
 
 def discover(root):
-    if (root/'study.json').is_file() and (root/'manifest.json').is_file():
+    # This sibling module is standard-library only; cluster nodes need no package.
+    try:
+        import add_batches as batches
+    except ImportError:
+        from projects import add_batches as batches
+    base, selected_batch = batches.locate(root)
+    if (base/'study.json').is_file() and (base/'manifest.json').is_file():
         raise ValueError('Ambiguous directory: both study.json and manifest.json exist')
-    if (root/'study.json').is_file():
-        entries = read_json(root/'study.json')['setups']
-        roots = [within(root, e['directory']) for e in entries]
-    else:
-        roots = [root]
+    roots = [within(base, e['directory']) for e in read_json(base/'study.json')['setups']] if (base/'study.json').is_file() else [base]
     if not roots or len(set(roots)) != len(roots):
         raise ValueError('Study has no setups or duplicate setup directories')
     tasks = []
     for bundle in roots:
         manifest = read_json(bundle/'manifest.json')
-        jobs = manifest['jobs']
-        if not jobs:
-            raise ValueError(f'No prepared jobs: {bundle}')
+        records = batches.inventory(bundle, manifest) if (bundle/'batches.json').exists() else [dict(batch_id='batch_000',jobs=manifest['jobs'])]
+        if selected_batch:
+            records = [b for b in records if b['batch_id']==selected_batch]
+            if not records: raise ValueError('Batch is not indexed')
         seen = set()
         include_cache = {}
-        for job in jobs:
-            input_file = within(bundle, job['parameter_file'])
-            key = clean(job['job_id'])
-            if key in seen or any(t['bundle']==str(bundle) and t['input']==str(input_file) for t in tasks):
-                raise ValueError(f'Duplicate job identity/input: {bundle}/{key}')
-            seen.add(key)
-            tasks.append(dict(bundle=clean(bundle), input=clean(input_file), job_id=key,
-                              bundle_id=manifest['bundle_id'], inferred_threads=thread_setting(input_file,bundle,include_cache)))
+        for record in records:
+            print('Selected %s: %s (%d jobs)' % (bundle, record['batch_id'], len(record['jobs'])))
+            for job in record['jobs']:
+                input_file = within(bundle, job['parameter_file'])
+                key = clean(job['job_id'])
+                if (record['batch_id'], key) in seen or any(t['bundle']==str(bundle) and t['input']==str(input_file) for t in tasks):
+                    raise ValueError('Duplicate job identity/input')
+                seen.add((record['batch_id'], key))
+                tasks.append(dict(bundle=clean(bundle), input=clean(input_file), job_id=key,
+                    batch_id=record['batch_id'], bundle_id=manifest['bundle_id'],
+                    inferred_threads=thread_setting(input_file,bundle,include_cache)))
+        if not manifest['jobs']: raise ValueError('No prepared jobs: '+str(bundle))
     return tasks
 
 
@@ -146,6 +153,7 @@ def show_history(tasks):
             key = (record.get('cluster'),record['slurm_job_id'])
             if key not in statuses:
                 statuses[key] = scheduler_status(record)
+            print('  Batches in submission: '+', '.join(sorted({j.get('batch_id','batch_000') for j in record.get('jobs',[])})))
             print(f"Previously submitted {bundle}: job {key[1]} at {record['submitted_at']}; {statuses[key]}")
     if statuses:
         print('History is informational: this invocation submits all selected jobs again unless --dry-run is used.')
@@ -221,7 +229,7 @@ def main(argv=None):
             wrapper = destination/f'input_{index}.txt'
             wrapper.write_text(f'includeFile = "{input_file}"\ni:Ts/NumberOfThreads = {cpus}\n')
             input_file = wrapper
-        lines.append('\t'.join([task['bundle'],str(input_file),task['job_id']]))
+        lines.append('\t'.join([task['bundle'],str(input_file),task['batch_id']+'/'+task['job_id']]))
     (destination/'tasks.tsv').write_text('\n'.join(lines)+'\n')
     settings = dict(command=command,environment=str(env),cpus_per_task=cpus,throttle=args.throttle,
                     time=args.time,mem=args.mem,partition=args.partition,exclude=args.exclude,job_name=args.job_name)
@@ -245,7 +253,7 @@ def main(argv=None):
         for bundle in dict.fromkeys(t['bundle'] for t in tasks):
             selected = [(i,t) for i,t in enumerate(tasks) if t['bundle']==bundle]
             entry = dict(record,bundle_id=selected[0][1]['bundle_id'],
-                         jobs=[dict(array_index=i,job_id=t['job_id']) for i,t in selected])
+                         jobs=[dict(array_index=i,job_id=t['job_id'],batch_id=t['batch_id']) for i,t in selected])
             history = Path(bundle)/'slurm/submissions.jsonl'
             history.parent.mkdir(exist_ok=True)
             with history.open('a') as stream:

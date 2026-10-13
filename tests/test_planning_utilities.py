@@ -23,7 +23,7 @@ def test_machine_equivalence(sad):
 @pytest.mark.parametrize('water',[False,True])
 def test_settings_equivalence(source,execution,water):
     bases=['one','two']
-    expected=dict(engine='TOPASPhoton',bundle_dir='example',histories=100,num_threads=4,
+    expected=dict(number_of_batches=1,seed=12345,engine='TOPASPhoton',bundle_dir='example',histories=100,num_threads=4,
         beamlet_execution=execution,water=water,enable_opengl=False,
         source_config={'type':source},dose_spacing_mm=(2.,2.,2.))
     if source=='phase_space':expected['source_config'].update(file_bases=['one','two'], selection='field')

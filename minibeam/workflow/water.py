@@ -34,6 +34,8 @@ class WaterSettings:
     dose_spacing_mm: tuple[float, float, float] | None
     enable_opengl: bool
     phase_space_selection: str = "field"
+    number_of_batches: int = 1
+    random_seed: int = 12345
 
 
 # SHARED PLANNING HELPERS
@@ -79,6 +81,7 @@ def build_planning(settings, project_dir):
     plan.prop_dose_calc = topas_settings(
         project_dir=root, source_type=settings.source_type, phase_space_file_bases=settings.phase_space_file_bases,
         phase_space_selection=settings.phase_space_selection,
+        number_of_batches=settings.number_of_batches, seed=settings.random_seed,
         histories=settings.histories_per_job, num_threads=settings.topas_threads_per_job, execution='combined',
         water=True, enable_opengl=settings.enable_opengl, dose_spacing_mm=settings.dose_spacing_mm)
     grid = scoring_grid(ct, settings.dose_spacing_mm)
@@ -96,7 +99,7 @@ def build_planning(settings, project_dir):
     print(f'Collimator: {"enabled" if settings.enable_collimator else "disabled"}; geometry: {config}')
     unit = 'original accelerator histories' if settings.source_type == 'phase_space' else 'primary photons'
     print(f'Source: {settings.source_type}; {settings.histories_per_job:,} {unit} TOTAL per job; {settings.topas_threads_per_job} threads')
-    print(f'Dose grid: {grid.dimensions}; {workload_estimate(grid, 1)}')
+    print(f'Dose grid: {grid.dimensions}; {workload_estimate(grid, 1, settings.number_of_batches)}')
     return root, ct, cst, plan, stf, metadata
 
 

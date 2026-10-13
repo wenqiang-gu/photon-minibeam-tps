@@ -17,7 +17,8 @@ test = ["pytest==9.1.1"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["minibeam*"]
+# projects contains only standalone Python cluster utilities, not generated data.
+include = ["minibeam*", "projects"]
 
 [tool.setuptools.package-data]
 "minibeam.geometry" = ["config.toml", "water_config.toml"]

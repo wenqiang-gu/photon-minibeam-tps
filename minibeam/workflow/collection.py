@@ -292,18 +292,32 @@ def scorer_warning_report(diagnostics):
     return "\n".join(lines)
 
 
+def batch_report(metadata):
+    lines = ['\n## Transport batches', '',
+        'Included: '+', '.join(metadata['included_batches'])+'.',
+        'Dose is the '+metadata['method']+'. Column numbering and exposure units do not change.',
+        metadata['source_reuse']+'.', 'Variance: '+metadata['variance_convention']+'.',
+        'Batch seeds, histories, and output paths are saved in stage metadata and `result.mat` `batch_metadata_json` (collect only).',
+        'Each additional batch uses the same incident sample; it is not an independent accelerator-source sample.']
+    if metadata['excluded_batches']:
+        lines += ['Incomplete, excluded: '+', '.join(b['batch_id'] for b in metadata['excluded_batches'])+'.']
+    return '\n'.join(lines)+'\n'
+
+
 def collect_bundle(root, stage, *, weight_per_bixel=1.0):
     root = Path(root).resolve()
-    manifest = io.load_manifest(root)
-    exported, integrity = planning_snapshot(root, manifest)
-    derived = root/'derived'
+    diagnostics = []
+    base_root, output_root, manifest = results.collection_context(root, diagnostics=diagnostics)
+    exported, integrity = planning_snapshot(base_root, manifest)
+    derived = output_root/'derived'
+    derived.mkdir(exist_ok=True)
+    exported['batch_metadata_json'] = json.dumps(manifest['batch_metadata'])
     if manifest.get('column_mapping'):
         exported['column_mapping'] = manifest['column_mapping']
     exported['beamlet_execution'] = manifest.get('beamlet_execution','separate')
     from ..topas.manifest import phase_space_selection
     exported['phase_space_selection'] = phase_space_selection(manifest)
     image = None
-    diagnostics = []
     current = io.implementation_hashes()
     old = manifest.get('implementation_sha256', {})
     status = dict(stage=stage, bundle_id=manifest['bundle_id'], planning_snapshot_integrity=integrity,
@@ -344,6 +358,8 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
         if 'physical_dose_std_error' in result:
             with atomic_path(derived/'dose_std_error_dose_grid.mha') as temp:
                 sitk.WriteImage(result['physical_dose_std_error'], str(temp))
+        if 'physical_dose_std_error' not in result:
+            (derived/'dose_std_error_dose_grid.mha').unlink(missing_ok=True)
         if manifest['ct_grid'] != manifest['dose_grid']:
             grid = Grid.model_validate(manifest['ct_grid'])
             image = sitk.Resample(image, list(grid.dimensions), sitk.Transform(), sitk.sitkLinear,
@@ -369,10 +385,16 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
         raise ValueError('Collection stage must be collect or forward')
     with atomic_path(derived/'indexing.md') as temp:
         report = indexing_report(manifest, stage, image) + scorer_warning_report(diagnostics)
+        if output_root != base_root:
+            report = report.replace("load('steering.mat')", "load('../../../derived/steering.mat')")
+            report = report.replace("../manifest.json", "../../../manifest.json")
+            report += '\nPlanning snapshot is shared at `../../../derived/steering.mat` relative to this derived directory.\n'
+        report += batch_report(manifest['batch_metadata'])
         if stage == 'forward':
             from .beam_dose_plot import beam_plot_report
             report += beam_plot_report(status['dose_plot'])
         temp.write_text(report)
+    status['batch_metadata'] = manifest['batch_metadata']
     status['phase_space_selection'] = phase_space_selection(manifest)
     status['crop_metadata'] = manifest.get('crop_metadata')
     status['scorer_warnings'] = diagnostics

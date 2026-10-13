@@ -38,8 +38,12 @@ def photon_machine(sad_mm):
 
 
 def topas_settings(*, project_dir, source_type, phase_space_file_bases, histories,
-                   num_threads, execution, water, enable_opengl, dose_spacing_mm, phase_space_selection="field"):
+                   num_threads, execution, water, enable_opengl, dose_spacing_mm, phase_space_selection="field", number_of_batches=1, seed=12345):
     """Build independent engine settings without opening source files."""
+    positive_integer('NUMBER_OF_BATCHES', number_of_batches)
+    positive_integer('RANDOM_SEED', seed)
+    if seed > 2**31-1: raise ValueError('RANDOM_SEED must be <= 2^31-1')
+    print(f'Transport batches: {number_of_batches}; base seed: {seed}; shared fixed replay sample')
     positive_integer('HISTORIES_PER_JOB', histories)
     positive_integer('TOPAS_THREADS_PER_JOB', num_threads)
     boolean('water', water)
@@ -57,7 +61,7 @@ def topas_settings(*, project_dir, source_type, phase_space_file_bases, historie
         print(f'Phase-space selection: {phase_space_selection}')
         if phase_space_selection == 'all_forward':
             print('All downstream source particles: physical hardware defines irradiation; planning bixels do not restrict fluence.')
-    settings = dict(engine='TOPASPhoton', bundle_dir=str(project_dir), histories=histories,
+    settings = dict(number_of_batches=number_of_batches, seed=seed, engine='TOPASPhoton', bundle_dir=str(project_dir), histories=histories,
                     num_threads=num_threads, beamlet_execution=execution, water=water,
                     enable_opengl=enable_opengl, source_config=source)
     if dose_spacing_mm is not None:
@@ -70,8 +74,9 @@ def check_matrad_grids(ct_grid, dose_grid):
         raise ValueError('matRad export requires square transverse CT and dose grids with pyRadPlan 0.5.0')
 
 
-def workload_estimate(grid, jobs):
+def workload_estimate(grid, jobs, batches=1):
     """Same dense float64 / approximate CSV accounting used by both workflows."""
     voxels = int(np.prod(grid.dimensions))
     return (f'{jobs} jobs; dense {voxels*jobs*8/1024**3:.3f} GiB; '
-            f'CSV estimate {voxels*jobs*100/1024**3:.3f} GiB')
+            f'CSV estimate {voxels*jobs*batches*100/1024**3:.3f} GiB'
+            + (f'; {batches} batches, {jobs*batches} transport jobs; shared inputs' if batches>1 else ''))

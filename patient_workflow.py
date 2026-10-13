@@ -56,6 +56,10 @@ PHASE_SPACE_FILE_BASES = [
 # Consume part1 first, then later parts as needed; no recycling.
 # Try 1_000_000 for an initial phase-space validation run.
 HISTORIES_PER_JOB = 680_000_000
+# Total batches initially prepared; add_batches.sh can append more later.
+# Reuses saved source particles; only TOPAS transport seeds change.
+NUMBER_OF_BATCHES = 5
+RANDOM_SEED = 12345
 # CPU threads per TOPAS job, not the number of simultaneous jobs.
 TOPAS_THREADS_PER_JOB = 4
 
@@ -119,6 +123,7 @@ def planning_settings():
         phase_space_file_bases=PHASE_SPACE_FILE_BASES,
         phase_space_selection=PHASE_SPACE_SELECTION,
         histories_per_job=HISTORIES_PER_JOB,
+        number_of_batches=NUMBER_OF_BATCHES, random_seed=RANDOM_SEED,
         topas_threads_per_job=TOPAS_THREADS_PER_JOB,
         enable_collimator=ENABLE_COLLIMATOR,
         geometry_config=GEOMETRY_CONFIG,

@@ -18,8 +18,8 @@ retaining the full sparse matrix. Explicit exposure weights remain active settin
 
 Validation covers supported schema/normalization, manifest integrity, bundled hashes,
 job identities, planning snapshot associations, and CSV scorer fingerprints, grids,
-units, histories, statistics, duplicate bins and completeness. Missing/malformed
-results fail rather than becoming zero dose. Hash receipts protect new planning
+units, histories, statistics, duplicate bins and completeness. Malformed results fail rather than becoming zero dose. Missing jobs exclude their
+entire batch; collection requires at least one completed batch (see below). Hash receipts protect new planning
 snapshots; legacy unhashed snapshots get structural checks and an integrity notice.
 Implementation-version differences are recorded rather than alone blocking collection.
 
@@ -173,3 +173,37 @@ needs memory for the accumulated sparse matrices.
 `TOPAS_THREADS_PER_JOB` controls particle transport, not collection. Parsing speed,
 shared-storage throughput, grid size, and sparse MATLAB export can all affect total
 runtime; faster CSV parsing does not eliminate those other costs.
+
+## Averaging repeated transport batches
+
+The same `collect` and `forward` commands handle initially prepared and later-added
+batches. The current `NUMBER_OF_BATCHES` setting is irrelevant to collection.
+A setup averages all **fully completed** saved batches, using one fixed set for all
+columns. Incomplete batches are listed and excluded; malformed files that already
+exist are still rejected, including files in incomplete batches. No completed batch
+means no new dose result. Rerun collection after more batches finish to replace the
+averaged derived output.
+
+Every repeated batch has the same history count. Normalized dose is averaged,
+not summed; matrix column count and exposure-weight units remain unchanged. Forward
+uses the averaged columns and does not require `collect`. It streams corresponding
+batch jobs without retaining the full matrix. Individual batches can also be read:
+
+```sh
+python patient_workflow.py collect --project projects/my-patient/shift_000/batches/batch_001
+python patient_workflow.py forward --project projects/my-patient/shift_000/batches/batch_001
+```
+
+Their outputs go into that batch's `derived/`. Its planning snapshot remains at the
+setup root. Merged outputs stay in the setup's `derived/`. `batch_metadata_json` in
+`result.mat`, stage metadata, and `indexing.md` identify included/excluded batches,
+seeds, history counts, output paths and the averaging convention. Decode in MATLAB
+with `jsondecode(result.batch_metadata_json)`.
+
+For B > 1 batches, each column's `variance_of_mean.npz` contains
+`sum((D_b - mean(D))^2) / (B*(B-1))`. This estimates transport uncertainty conditional
+on the **fixed saved source sample**. It does not estimate or reduce finite source-
+sampling uncertainty, for phase-space or point-source replay. Single-batch outputs
+retain their legacy scorer-variance convention. Multi-batch forward standard error
+is omitted because combined covariance is not implemented. Exposure weights are not
+multiplied by the number of repeated simulations.

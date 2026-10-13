@@ -19,6 +19,7 @@ class TOPASPhotonEngine(DoseEngineBase):
     beamlet_execution: str = "separate"
     histories: int = 10000
     seed: int = 12345
+    number_of_batches: int = 1
     num_threads: int = 1
     enable_opengl: bool = False
     enforce_ct_crop_protection: bool = True
@@ -59,7 +60,7 @@ class TOPASPhotonEngine(DoseEngineBase):
             if key not in allowed:
                 raise ValueError(f"Unknown photon TOPAS setting: {key}")
             setattr(self, key, value)
-        for name in ["histories", "seed", "num_threads", "max_matrix_bytes"]:
+        for name in ["histories", "seed", "num_threads", "max_matrix_bytes", "number_of_batches"]:
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{name} must be a positive integer")
@@ -138,7 +139,11 @@ class TOPASPhotonEngine(DoseEngineBase):
 
     def prepare_jobs(self, ct, cst, stf, *, bundle_dir=None, provenance=None):
         stf = self._steering(stf)
-        return self._writer(stf).prepare_jobs(ct, cst, stf, bundle_dir=bundle_dir, provenance=provenance)
+        root = self._writer(stf).prepare_jobs(ct, cst, stf, bundle_dir=bundle_dir, provenance=provenance)
+        if self.number_of_batches > 1:
+            from ..batches import add
+            add(root, total=self.number_of_batches)
+        return root
 
     def iter_scores(self, bundle_dir=None):
         return results.iter_scores(bundle_dir or self.bundle_dir)
@@ -150,7 +155,9 @@ class TOPASPhotonEngine(DoseEngineBase):
         return results.collect_forward(weights, bundle_dir or self.bundle_dir)
 
     def _ready(self, ct, cst, stf):
-        root = Path(self.bundle_dir).resolve()
+        from ..batches import locate
+        requested = Path(self.bundle_dir).resolve()
+        root, _ = locate(requested)
         if not (root / "manifest.json").is_file():
             raise ResultsPendingError("Prepare a bundle and execute its TOPAS jobs before calculating dose")
         from ..topas.manifest import load_manifest
@@ -159,7 +166,7 @@ class TOPASPhotonEngine(DoseEngineBase):
         if manifest.get('beamlet_execution','separate') != self.beamlet_execution:
             raise ValueError('Native dose execution mode differs from saved bundle')
         validate_request(manifest, ct, stf, self.dose_spacing_mm, self.ct_crop_voxels, cst, self.enforce_ct_crop_protection)
-        return root
+        return requested
 
     def _calc_dose(self, ct, cst, stf):
         return self.collect_results(self._ready(ct, cst, stf))
@@ -167,7 +174,8 @@ class TOPASPhotonEngine(DoseEngineBase):
     def calc_dose_forward(self, ct, cst, stf, w=None):
         root = self._ready(ct,cst,stf)
         from ..topas.manifest import load_manifest
-        manifest = load_manifest(root)
+        from ..batches import locate
+        manifest = load_manifest(locate(root)[0])
         if w is None:
             w = np.array([bl.weight for beam in stf.beams for ray in beam.rays for bl in ray.beamlets])
         w = np.asarray(w, dtype=float)

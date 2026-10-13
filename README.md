@@ -14,7 +14,7 @@ as the patient and water workflows are evaluated.
 - [ ] Compare "field" with "all_forward" for the water phantom simulation
 - [ ] Add water-phantom analysis of depth-dose curves, lateral profiles, and peak-to-valley dose ratios.
 - [ ] Benchmark calculated dose against measurements across field sizes, slit widths, and depths.
-- [ ] Split simulations into batches and combine their dose results, with explicit random-seed management and history normalization.
+- [x] Repeat transport with saved source particles using distinct batch seeds; average completed batches without changing dose-column definitions.
 - [ ] Validate phase-space files generated from a tuned Monte Carlo accelerator model.
 - [ ] Propagate uncertainty for shared phase-space histories, accounting for correlations between dose-matrix columns.
 - [ ] Calibrate dose to measured output and monitor units under clearly defined reference conditions.
@@ -23,6 +23,22 @@ as the patient and water workflows are evaluated.
 - [ ] How to convert an optimized fluence map to deliverable MLC and other weights?
 - [ ] Calculate dose delivery with realistic geometry (MLC shape) and non-beamlet particles
 
+
+## Repeated simulations
+
+Both workflows expose `NUMBER_OF_BATCHES = 1` and `RANDOM_SEED = 12345`. Increase the
+initial total before `prepare`, or append batches to an existing saved project:
+
+```sh
+./projects/add_batches.sh projects/my-patient --count 3
+```
+
+`--count` means additional batches. Its editable shell default is three. Inputs are
+shared; only TOPAS seeds and output identities change. `collect` and `forward` average
+fully completed batches automatically; incomplete batches are reported. Repeated
+transport does not create new source histories or remove finite phase-space sampling
+uncertainty. See [batch execution](docs/cluster.md#repeated-transport-batches) and
+[averaging and uncertainty](docs/results-and-matlab.md#averaging-repeated-transport-batches).
 
 ## Install
 

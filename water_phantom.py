@@ -34,8 +34,12 @@ PHASE_SPACE_FILE_BASES = [
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.
-HISTORIES_PER_JOB = 100_000
-TOPAS_THREADS_PER_JOB = 4
+HISTORIES_PER_JOB = 680_000_000
+# Total batches initially prepared; add_batches.sh can append more later.
+# Reuses saved source particles; only TOPAS transport seeds change.
+NUMBER_OF_BATCHES = 5
+RANDOM_SEED = 12345
+TOPAS_THREADS_PER_JOB = 8
 
 # None selects the independent packaged water_config.toml.
 # Its field.width_mm/height_mm define the square field AT THE WATER SURFACE.
@@ -58,6 +62,7 @@ def planning_settings():
         phase_space_file_bases=PHASE_SPACE_FILE_BASES,
         phase_space_selection=PHASE_SPACE_SELECTION,
         histories_per_job=HISTORIES_PER_JOB,
+        number_of_batches=NUMBER_OF_BATCHES, random_seed=RANDOM_SEED,
         topas_threads_per_job=TOPAS_THREADS_PER_JOB,
         geometry_config=GEOMETRY_CONFIG,
         enable_collimator=ENABLE_COLLIMATOR,

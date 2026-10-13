@@ -182,12 +182,16 @@ class BeamDosePlots:
                 notices = [f"This beam's weighted dose only. CT: perpendicular reference slice at depth {record['reference_slice_depth_mm']:.1f} mm.",
                            f"Exposure weights ({record['weight_units']}): {np.array2string(np.asarray(record['weights']),threshold=6)}",
                            'Inferno, linear shared scale, no positive-dose cutoff. Depth is positive downstream.']
+                batch = self.manifest.get('batch_metadata')
+                if batch:
+                    record['batch_metadata'] = batch
+                    notices.append(f"Mean of {batch['number_averaged']} transport batch(es); fixed source sample reused.")
                 if slab['fallback']: notices.append(slab['fallback'])
                 if self.missing: notices.append('Target unavailable: '+', '.join(self.missing))
                 if not view['dose'].any(): notices.append('This beam has zero dose.')
                 if record['phase_space_selection'] == 'all_forward':
                     notices.append('All-forward source; bixels do not limit irradiation. Projection shows only the displayed depth slab.')
-                warnings = [d for d in self.diagnostics if d['job_id'] in record['job_ids']]
+                warnings = [d for d in self.diagnostics if d['job_id'].split('/')[-1] in record['job_ids']]
                 record['scorer_warnings'] = warnings
                 if warnings: notices.append(f'SCORER WARNINGS ({len(warnings)} jobs): validity requires user review; see indexing.md.')
                 fig.supxlabel('\n'.join(notices),fontsize=9)

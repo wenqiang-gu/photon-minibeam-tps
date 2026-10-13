@@ -54,7 +54,7 @@ def test_study_submission_worker_and_history(tmp_path,tools,capsys):
     (root/'study.json').write_text(json.dumps(dict(setups=[dict(directory='shift_000'),dict(directory='shift_025')])))
     invoke(root,env,'--time','01:00:00','--mem','32000M','--partition','cpu','--job-name','test')
     history=json.loads((a/'slurm/submissions.jsonl').read_text())
-    assert history['jobs']==[dict(array_index=0,job_id='bixel_000001')]
+    assert history['jobs']==[dict(array_index=0,job_id='bixel_000001',batch_id='batch_000')]
     dest=Path(history['submission_directory'])
     settings=json.loads((dest/'submission.json').read_text())['settings']
     assert '--mem=32000M' in settings['command']
