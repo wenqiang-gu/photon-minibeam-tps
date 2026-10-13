@@ -11,17 +11,19 @@ is implemented.
 The following features are planned but not yet complete. Priorities may change
 as the patient and water workflows are evaluated.
 
-- [ ] Compare "field" with "all_forward" for the water phantom simulation
-- [ ] Add water-phantom analysis of depth-dose curves, lateral profiles, and peak-to-valley dose ratios.
-- [ ] Benchmark calculated dose against measurements across field sizes, slit widths, and depths.
-- [x] Repeat transport with saved source particles using distinct batch seeds; average completed batches without changing dose-column definitions.
+- [x] Repeat TOPAS with saved source particles using distinct batch seeds; average completed batches without changing dose-column definitions.
+- [ ] Evaluate uncertainty for the dose calculation
+
+- [ ] Benchmark calculated dose (PDD, lateral, PVDR) against phantom measurements across field sizes, slit widths, and depths.
+
 - [ ] Validate phase-space files generated from a tuned Monte Carlo accelerator model.
-- [ ] Propagate uncertainty for shared phase-space histories, accounting for correlations between dose-matrix columns.
-- [ ] Calibrate dose to measured output and monitor units under clearly defined reference conditions.
-- [ ] Implement fluence-map optimization using separate beamlet dose matrices, with target and organ-at-risk objectives.
-- [ ] Add MLC leaf shift for beamlet delivery (and recalcualte dose for dose validation?)
-- [ ] How to convert an optimized fluence map to deliverable MLC and other weights?
-- [ ] Calculate dose delivery with realistic geometry (MLC shape) and non-beamlet particles
+
+- [ ] (Optional) implement fluence-map optimization (FMO) using dij matrices, with target and organ-at-risk objectives.
+
+- [ ] Implement realistic MLC parameters (i.e. leaf shift) in the TOPAS
+- [ ] Repeat dose calculation with delivable MLC parameters deduced from FMO results
+- [ ] Compare "field" with "all_forward" for the phantom simulation, patient simulation
+
 
 
 ## Repeated simulations
