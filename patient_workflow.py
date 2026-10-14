@@ -42,9 +42,12 @@ SOURCE_TYPE = "phase_space"  # "point" or "phase_space"
 # Applies only to SOURCE_TYPE = "phase_space".
 # "field": replay particles projected into the selected bixels.
 # "all_forward": replay every downstream particle in the original-history prefix.
-# Requires combined execution; physical MLC/jaws/collimator define irradiation.
-# Transport scatter is included in BOTH modes. Empty histories still count in
-# HISTORIES_PER_JOB and dose normalization; this does not select N particles.
+# "outside_field": replay the downstream complement of the selected bixel union.
+# It excludes projected bixels, NOT a physical target volume. Requires combined
+# execution, like all_forward. Empty histories still count in normalization.
+# Scatter during transport is included in all three modes.
+# all_forward also requires combined execution; hardware defines irradiation.
+# HISTORIES_PER_JOB counts original histories, not selected particles.
 PHASE_SPACE_SELECTION = "field"
 PHASE_SPACE_FILE_BASES = [
     "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1",

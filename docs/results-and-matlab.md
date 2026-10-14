@@ -145,7 +145,7 @@ filtering and malformed results still fail.
 ## Unrestricted phase-space results
 
 `phase_space_selection` in MATLAB and collection/forward metadata records `field`,
-`all_forward`, or `not_applicable` for point sources. Legacy phase-space projects
+`all_forward`, `outside_field`, or `not_applicable` for point sources. Legacy phase-space projects
 without this field retain their original field-selection meaning.
 
 In `all_forward`, one matrix column represents a whole-source beam dose, including
@@ -154,6 +154,12 @@ associations for reference; it does not partition that column's incident fluence
 Bixel dots in beam plots are labeled as planning reference positions. The same
 selected-target depth slab is used for projection, so these figures can omit dose
 outside that slab; inspect the full scoring-grid dose for peripheral contributions.
+
+In `outside_field`, each column is the outside-field incident-particle contribution
+for one beam. Its listed bixels define the excluded union, not contributing dose
+columns. Collection, batch averaging and exposure weights retain the same original-
+history convention. Compare all three modes with matching exposures; do not
+independently normalize them to measurements when checking dose additivity.
 
 ## Collection speed and progress
 

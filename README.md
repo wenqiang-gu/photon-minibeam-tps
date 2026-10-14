@@ -12,11 +12,11 @@ The following features are planned but not yet complete. Priorities may change
 as the patient and water workflows are evaluated.
 
 - [x] Repeat TOPAS with saved source particles using distinct batch seeds; average completed batches without changing dose-column definitions.
-- [ ] Evaluate uncertainty for the dose calculation
+- [ ] Evaluate uncertainty for the dose calculation.
 
-- [ ] Benchmark calculated dose (PDD, lateral, PVDR) against phantom measurements across field sizes, slit widths, and depths.
+- [ ] Benchmark calculated dose (PDD, lateral, PVDR) against phantom measurements across field sizes and depths.
 
-- [ ] Validate phase-space files generated from a tuned Monte Carlo accelerator model.
+- [ ] Fine tune phase-space files (focal spot spread, energy) for data-MC comparison.
 
 - [ ] (Optional) implement fluence-map optimization (FMO) using dij matrices, with target and organ-at-risk objectives.
 
@@ -30,7 +30,7 @@ The following production projects are scheduled for various aims.
 
 ### Basic modeling
 Using Elekta_Precise_6MV phase space file
-- [ ] "field" vs "all_forward": `openfield-10x10`, `openfield-10x10-inbixel`
+- [ ] contribution from particles outside field/bixels: `openfield-10x10`, `openfield-10x10-inbixel`, `openfield-10x10-outside`
 - [ ] verify collimator orentation (slit length along X): `slits-10x10` 
 
 ### MLC & jaw position
@@ -120,8 +120,10 @@ beam along +Y. Planning isocenter is the entrance-surface center. A 100 mm squar
 field with 5 mm bixels contains 400 bixels simulated in one combined job. `WATER`
 is a whole-phantom calculation ROI, not a tumor or the beamlet-selection mask.
 
-Both workflows support `PHASE_SPACE_SELECTION="field"` (default) or
-`"all_forward"` for unrestricted downstream phase-space replay in combined mode.
+Both workflows support `PHASE_SPACE_SELECTION="field"` (default),
+`"all_forward"` for unrestricted downstream phase-space replay, or
+`"outside_field"` for its complement outside the selected bixel union.
+The latter two modes require combined execution and preserve original-history normalization.
 See the [geometry/source guide](docs/geometry-and-sources.md) for comparison semantics.
 
 ## Execute TOPAS

@@ -201,3 +201,35 @@ then `projects/water-all-forward` with `all_forward`; execute and reconstruct ea
 project separately. The difference includes direct and scattered contributions
 from previously excluded particles. Shared histories correlate the two estimates;
 a quantitative uncertainty for their difference is not currently provided.
+
+### Outside-field phase-space diagnostic
+
+Both workflows accept `PHASE_SPACE_SELECTION = "outside_field"` with combined
+execution. It retains downstream particles whose straight-line projections lie
+outside the union of selected bixels. Water uses its square entrance field;
+patients use their selected native bixels, not the physical target volume.
+The half-open square boundaries exactly complement `"field"`. Backward/tangent
+particles remain excluded. Point sources ignore this setting.
+
+Use a fresh project with the same source files, history prefix, hardware and dose
+grid as the corresponding `field` and `all_forward` projects. For example:
+
+```sh
+# Set PHASE_SPACE_SELECTION = "outside_field" in water_phantom.py first.
+python water_phantom.py prepare --project projects/openfield-10x10-outside
+```
+
+No source recycling is added. Particle weights and original histories (including
+empty ones) retain the same normalization. Each beam has one aggregate dose column,
+representing its outside-field incident-particle contribution. Listed bixels and
+plot dots describe the excluded selection region. Changing the setting requires
+fresh preparation; saved projects retain their existing behavior.
+
+After TOPAS execution, collect or reconstruct forward dose normally. Compare
+`all_forward ≈ field + outside_field` using equal original-history exposure weights,
+without independently fitting each result to measurements. Batches are averaged,
+not summed. Transport scatter exists in all three modes; this decomposition
+classifies incident particles by projection, not by whether their dose arose from
+scatter. Target-depth maximum-projection plots can omit dose elsewhere; use the
+full scoring-grid dose for quantitative additivity checks. No paired-difference
+uncertainty is currently supplied.

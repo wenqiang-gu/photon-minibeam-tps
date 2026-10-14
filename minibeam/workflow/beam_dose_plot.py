@@ -175,7 +175,7 @@ class BeamDosePlots:
                 ax.set_aspect('equal')
                 handles = [Line2D([],[],color='lime',label=name+(' (calculation region)' if record['calculation_region'] else ' (projected)')) for name in view['outlines']]
                 handles.append(Line2D([],[],color='cyan',marker='.',linestyle='None',
-                                      label=('Planning bixel reference positions' if record['phase_space_selection'] == 'all_forward' else 'Bixel centers at isocenter plane')))
+                                      label=('Planning bixel reference positions' if record['phase_space_selection'] in {'all_forward', 'outside_field'} else 'Bixel centers at isocenter plane')))
                 handles.append(Line2D([],[],color='cyan',marker='+',linestyle='None',label='Isocenter'))
                 ax.legend(handles=handles,loc='upper right',fontsize=8)
                 fig.colorbar(artist,ax=ax,label='Maximum dose (Gy)',shrink=.75)
@@ -189,6 +189,8 @@ class BeamDosePlots:
                 if slab['fallback']: notices.append(slab['fallback'])
                 if self.missing: notices.append('Target unavailable: '+', '.join(self.missing))
                 if not view['dose'].any(): notices.append('This beam has zero dose.')
+                if record['phase_space_selection'] == 'outside_field':
+                    notices.append('Outside-field incident-particle contribution; bixels define the excluded region. Projection shows only the displayed depth slab.')
                 if record['phase_space_selection'] == 'all_forward':
                     notices.append('All-forward source; bixels do not limit irradiation. Projection shows only the displayed depth slab.')
                 warnings = [d for d in self.diagnostics if d['job_id'].split('/')[-1] in record['job_ids']]

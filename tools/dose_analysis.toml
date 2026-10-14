@@ -12,8 +12,8 @@ reference_depth_mm = 100.0
 normalization_roi_fraction = 1.0
 # Normalization reduces the selected ROI dimensions by this fraction.
 # These half-widths also control perpendicular profile averaging.
-x_roi_half_width_mm = 5
-y_roi_half_width_mm = 5
+x_roi_half_width_mm = 25
+y_roi_half_width_mm = 25
 depths_mm = [5.5, 20.0, 50.0, 100.0]
 open_monitor_units = 400.0
 slit_monitor_units = 2000.0

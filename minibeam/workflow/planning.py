@@ -59,6 +59,8 @@ def topas_settings(*, project_dir, source_type, phase_space_file_bases, historie
         source['file_bases'] = deepcopy(phase_space_file_bases)
         source['selection'] = phase_space_selection
         print(f'Phase-space selection: {phase_space_selection}')
+        if phase_space_selection == 'outside_field':
+            print('Outside-field incident particles only: complement of the selected bixel union; not a target-volume exclusion. Original-history normalization is unchanged.')
         if phase_space_selection == 'all_forward':
             print('All downstream source particles: physical hardware defines irradiation; planning bixels do not restrict fluence.')
     settings = dict(number_of_batches=number_of_batches, seed=seed, engine='TOPASPhoton', bundle_dir=str(project_dir), histories=histories,

@@ -11,10 +11,10 @@ from ..topas.manifest import digest_json
 
 def validate_selection(selection, execution=None):
     """Reject incompatible replay before opening potentially large source files."""
-    if selection not in ('field', 'all_forward'):
-        raise ValueError('Phase-space selection must be field or all_forward')
-    if selection == 'all_forward' and execution not in (None, 'combined'):
-        raise ValueError('all_forward phase-space selection requires combined execution')
+    if selection not in ('field', 'outside_field', 'all_forward'):
+        raise ValueError('Phase-space selection must be field, outside_field or all_forward')
+    if selection in ('all_forward', 'outside_field') and execution not in (None, 'combined'):
+        raise ValueError(f'{selection} phase-space selection requires combined execution')
 
 
 class PhaseSpaceBeamletSource:
@@ -70,6 +70,8 @@ class PhaseSpaceBeamletSource:
             item = squares[0] if execution == 'separate' else {'squares': squares}
             if self.selection_mode == 'all_forward':
                 item = {'selection_mode': 'all_forward'}  # Shared local replay for every beam.
+            if self.selection_mode == 'outside_field':
+                item = dict(item, selection_mode='outside_field')
             key=digest_json(item); selections[key]=item
             job += 1; job_keys[members[0]['bixel_index']]=key
         if not job:raise ValueError('No phase-space bixels to prepare')
@@ -78,7 +80,7 @@ class PhaseSpaceBeamletSource:
         directory=Path(self._temporary.name)
         states={key:{'selection':item,'last_history':0,'particles':0,'reached':0,
                      'selected_per_file':np.zeros(len(infos),dtype=np.int64),
-                     'member_counts':np.zeros(0 if self.selection_mode == 'all_forward' else len(item.get('squares',[item])),dtype=np.int64),
+                     'member_counts':np.zeros(0 if self.selection_mode != 'field' else len(item.get('squares',[item])),dtype=np.int64),
                      'species':np.zeros(3,dtype=np.int64),'bounds':np.array([[np.inf,np.inf],[-np.inf,-np.inf]])}
                 for key,item in selections.items()}
         audits=[];prefix_particles=backward=0
@@ -113,8 +115,12 @@ class PhaseSpaceBeamletSource:
                     selected=np.zeros(len(a),dtype=bool)
                     for i,selection in enumerate(squares):
                         mask = contains(selection, px, py)
-                        state['member_counts'][i] += int(mask.sum())
+                        if self.selection_mode == 'field':
+                            state['member_counts'][i] += int(mask.sum())
                         selected |= mask
+                    # Complement the union once, never each bixel individually.
+                    if self.selection_mode == 'outside_field':
+                        selected = ~selected
                 rows=a[selected];history_ids=ids[selected]
                 state['selected_per_file'][file_index]+=len(rows)
                 if not len(rows):continue
@@ -137,17 +143,20 @@ class PhaseSpaceBeamletSource:
         for key,state in states.items():
             if state['particles']==0 or np.any(state['member_counts']==0):
                 raise ValueError(f"Phase-space bixel at {state['selection']} selects no particles; "
-                                 'increase HISTORIES_PER_JOB or check coverage. No dose was fabricated.')
+                                 'increase HISTORIES_PER_JOB or check selection coverage. No dose was fabricated.')
             # Header totals retain the requested ORIGINAL history count, including
             # gaps and filtered-empty histories, never the selected particle count.
             write_topas_header(directory/f'{key}.header',histories,state['reached'],state['particles'])
-            state['record']={'model':'phase_space_all_forward' if self.selection_mode == 'all_forward' else 'phase_space_square_beamlet',
+            state['record']={'model':{'all_forward':'phase_space_all_forward', 'outside_field':'phase_space_outside_field', 'field':'phase_space_square_beamlet'}[self.selection_mode],
                 'selection_mode':self.selection_mode,**({'selections':state['selection']['squares']} if 'squares' in state['selection'] else {'selection':state['selection']}),
-                'boundary_rule':'none; all downstream particles' if self.selection_mode == 'all_forward' else 'lower inclusive, upper exclusive','represented_original_histories':histories,
+                'boundary_rule':'none; all downstream particles' if self.selection_mode == 'all_forward' else ('complement of lower-inclusive, upper-exclusive square union' if self.selection_mode == 'outside_field' else 'lower inclusive, upper exclusive'),'represented_original_histories':histories,
                 'nonempty_selected_histories':state['reached'],'empty_histories':histories-state['reached'],
                 'particles_per_member_bixel':state['member_counts'].tolist(),
                 'selected_particles':state['particles'],'prefix_particles':prefix_particles,
                 'excluded_particles':prefix_particles-state['particles'],
+                **({'retained_outside_field_particles':state['particles'],
+                    'rejected_inside_field_particles':prefix_particles-backward-state['particles']}
+                   if self.selection_mode == 'outside_field' else {}),
                 'excluded_backward_or_tangent_particles':backward,
                 'selected_species_counts':dict(zip(('photons','electrons','positrons'),map(int,state['species']))),
                 'selected_xy_bounds_mm':state['bounds'].tolist(),
@@ -172,7 +181,7 @@ class PhaseSpaceBeamletSource:
         origin,basis,points=self._plane(context)
         return SourceDescription('fixed_beam_phase_space_plane',
             (points.min(axis=0)-context.patient_center,points.max(axis=0)-context.patient_center),
-            normalization='original_accelerator_history', job_modes=('combined',) if self.selection_mode == 'all_forward' else ('beamlet','combined'))
+            normalization='original_accelerator_history', job_modes=('combined',) if self.selection_mode != 'field' else ('beamlet','combined'))
 
     def render(self, context):
         key=self.job_keys[context.bixel_index];state=self.selections[key]

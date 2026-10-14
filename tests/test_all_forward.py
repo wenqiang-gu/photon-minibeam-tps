@@ -66,34 +66,35 @@ def test_field_unchanged_and_early_rejection(case,tmp_path):
         TOPASPhotonEngine(case[1],source_model=src)
 
 
-def test_saved_whole_source_collection(case,tmp_path):
+@pytest.mark.parametrize('mode,count,label', [('all_forward',3,'whole-source beam dose'),('outside_field',2,'outside-field incident-particle contribution')])
+def test_saved_whole_source_collection(case,tmp_path,mode,count,label):
     ct,plan,cst,stf,_=case
     base=source_files(tmp_path)[0]
     engine=TOPASPhotonEngine(plan,water=True,histories=10,beamlet_execution='combined',
-        source_config={'type':'phase_space','file_base':str(base),'selection':'all_forward'})
+        source_config={'type':'phase_space','file_base':str(base),'selection':mode})
     root=engine.prepare_jobs(ct,cst,stf)
     save_planning_snapshot(ct,cst,plan,stf,root,{})
     m=load_manifest(root)
     assert len(m['column_mapping'])==2
     assert len(list((root/'inputs').glob('*.phsp')))==1
-    assert len(replay(root,m['jobs'][0]))==3
+    assert len(replay(root,m['jobs'][0]))==count
     fake_results(root)
     moved=tmp_path/'moved';shutil.move(root,moved)
     for p in tmp_path.glob('first.*'):p.unlink()
     collect_bundle(moved,'collect')
     saved=loadmat(moved/'derived/result.mat',simplify_cells=True)
-    assert saved['phase_space_selection']=='all_forward'
+    assert saved['phase_space_selection']==mode
     assert saved['dij']['physicalDose'].shape[1]==2
     np.testing.assert_allclose(saved['dij']['physicalDose'].toarray()[0], [1e-10,2e-10], rtol=1e-12)
-    assert 'whole-source beam dose' in (moved/'derived/indexing.md').read_text()
+    assert label in (moved/'derived/indexing.md').read_text()
     collect_bundle(moved,'forward',weight_per_bixel=2.)
     meta=json.loads((moved/'derived/forward_metadata.json').read_text())
     import SimpleITK as sitk
     image=sitk.ReadImage(str(moved/'derived/dose_scoring_grid.mha'))
     assert sitk.GetArrayFromImage(image).flat[0] == pytest.approx(6e-10)
-    assert meta['phase_space_selection']=='all_forward'
+    assert meta['phase_space_selection']==mode
     assert meta['dose_plot']['status']=='complete'
-    assert all(b['phase_space_selection']=='all_forward' for b in meta['dose_plot']['beams'])
+    assert all(b['phase_space_selection']==mode for b in meta['dose_plot']['beams'])
     assert not (moved/'derived/dose_std_error_dose_grid.mha').exists()
 
 
@@ -108,7 +109,8 @@ def test_outside_field_transport(case,tmp_path):
     for _ in range(100):
         records.extend([(1,-2.,0.,0.,0.,0.,1.,1,0),(1,2.,.4,0.,0.,0.,1.,0,0)])
     base=make_iaea(tmp_path/'transport',records=records,original=120)
-    for mode,count in [('field',100),('all_forward',200)]:
+    doses={}
+    for mode,count in [('field',100),('outside_field',100),('all_forward',200)]:
         engine=TOPASPhotonEngine(plan,water=True,histories=120,beamlet_execution='combined',
             source_config={'type':'phase_space','file_base':str(base),'selection':mode})
         root=engine.prepare_jobs(ct,cst,stf,bundle_dir=tmp_path/mode)
@@ -116,16 +118,20 @@ def test_outside_field_transport(case,tmp_path):
         assert all(j['source']['selected_particles']==count for j in m['jobs'])
         execute_jobs(root,executable)
         dij=engine.collect_results(root)
-        assert dij.physical_dose.flat[0].sum()>0
+        doses[mode]=float(dij.physical_dose.flat[0].sum())
+        assert doses[mode]>0
+    # Broad stochastic smoke-check tolerance; not a precision physics benchmark.
+    assert doses['field']+doses['outside_field'] == pytest.approx(doses['all_forward'], rel=.5)
 
 
+@pytest.mark.parametrize('mode', ['all_forward', 'outside_field'])
 @pytest.mark.parametrize('which', ['patient', 'water'])
-def test_top_level_propagation(which,monkeypatch,tmp_path):
+def test_top_level_propagation(which,monkeypatch,tmp_path,mode):
     import patient_workflow as patient
     import water_phantom as water
     module = patient if which == 'patient' else water
     monkeypatch.setattr(module, 'SOURCE_TYPE', 'phase_space')
-    monkeypatch.setattr(module, 'PHASE_SPACE_SELECTION', 'all_forward')
+    monkeypatch.setattr(module, 'PHASE_SPACE_SELECTION', mode)
     if which == 'patient':
         monkeypatch.setattr(module, 'BEAMLET_EXECUTION', 'combined')
         settings=module.planning_settings()
@@ -133,7 +139,7 @@ def test_top_level_propagation(which,monkeypatch,tmp_path):
     else:
         settings=module.planning_settings()
         plan=module.water.build_planning(settings,tmp_path)[3]
-    assert plan.prop_dose_calc['source_config']['selection']=='all_forward'
+    assert plan.prop_dose_calc['source_config']['selection']==mode
 
 
 def test_point_ignores_phase_selection():

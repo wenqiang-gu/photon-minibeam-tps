@@ -3,6 +3,7 @@
 def combined_report(manifest, stage, image=None):
     from .collection import indexing_report
     from ..topas.manifest import phase_space_selection
+    outside = phase_space_selection(manifest) == 'outside_field'
     unrestricted = phase_space_selection(manifest) == 'all_forward'
     base = indexing_report(dict(manifest,beamlet_execution='separate'),stage,image)
     base = base.replace('j = 1;  % choose a global beamlet column','j = 1;  % choose an aggregate beam column')
@@ -11,7 +12,7 @@ def combined_report(manifest, stage, image=None):
     start = base.index('## Beamlet columns and TOPAS jobs')
     stop = base.index('## Structures and CT voxels')
     lines = ['## Aggregate beam columns and TOPAS jobs', '',
-        ('Execution: combined; selection: all_forward. Each column is a whole-source beam dose, not a sum limited to the listed planning bixels. Members are planning references only.' if unrestricted else 'Execution: combined. Each column sums all selected bixels of one beam; it is not an individual native bixel.'),
+        ('Execution: combined; selection: all_forward. Each column is a whole-source beam dose, not a sum limited to the listed planning bixels. Members are planning references only.' if unrestricted else 'Execution: combined; selection: outside_field. Each column is an outside-field incident-particle contribution, not a sum of its listed bixels. Members define the excluded square union.' if outside else 'Execution: combined. Each column sums all selected bixels of one beam; it is not an individual native bixel.'),
         '`beamNum` is a 1-based native beam index. `rayNum` and `bixelNum` are 0 sentinels (−1 in native Python Dij), meaning not applicable. Never use them to index stf.',
         '`stf` remains the full native steering. `column_mapping` is a MATLAB cell array identifying each aggregate and its native members.', '',
         '| Column | Beam | Gantry / couch (deg) | Native bixels | TOPAS job |', '|---|---|---|---|---|']
@@ -29,5 +30,5 @@ def combined_report(manifest, stage, image=None):
     elif manifest['normalization']=='independent_primary_photon':
         lines += ['Point source: N photons total per job are sampled uniformly over the selected square union. Divide scored sum by N. A forward weight is the total number of photons for this beam, distributed across its member bixels by area.', '']
     else:
-        lines += [('Phase space: all downstream records appear once, without a projected-field cut,' if unrestricted else 'Phase space: each selected record appears once in the square union,') + ' with original histories and particle weights preserved. Divide by represented original histories, not by particles or number of members.', '']
+        lines += [('Phase space: all downstream records appear once, without a projected-field cut,' if unrestricted else 'Phase space: each downstream record outside the selected square union appears once,' if outside else 'Phase space: each selected record appears once in the square union,') + ' with original histories and particle weights preserved. Divide by represented original histories, not by particles or number of members.', '']
     return base[:start]+'\n'.join(lines)+'\n'+base[stop:]
