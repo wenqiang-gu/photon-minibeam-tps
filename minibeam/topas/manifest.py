@@ -29,7 +29,7 @@ def bundle_path(root, relative):
 def load_manifest(root):
     root = Path(root)
     manifest = json.loads((root / "manifest.json").read_text())
-    if manifest.get("schema_version") not in {2, 3}:
+    if manifest.get("schema_version") not in {2, 3, 4}:
         raise ValueError("Unsupported bundle schema; prepare a new bundle in a new directory")
     signed = {k: v for k, v in manifest.items() if k != "bundle_id"}
     if digest_json(signed) != manifest["bundle_id"]:
@@ -52,7 +52,7 @@ def load_manifest(root):
     combined = manifest.get('beamlet_execution', 'separate') == 'combined'
     if manifest.get('beamlet_execution', 'separate') not in {'separate','combined'}:
         raise ValueError('Unsupported beamlet execution mode')
-    if combined and (manifest['schema_version'] != 3 or any(j['ray_index'] != 0 or j['beamlet_index'] != 0 for j in jobs)):
+    if combined and (manifest['schema_version'] not in {3,4} or any(j['ray_index'] != 0 or j['beamlet_index'] != 0 for j in jobs)):
         raise ValueError('Aggregate jobs must use non-native zero ray/bixel sentinels')
     if phase_space_selection(manifest) in {'all_forward', 'outside_field'} and not combined:
         raise ValueError('Saved all_forward/outside_field source requires combined execution')
@@ -62,7 +62,7 @@ def load_manifest(root):
         raise ValueError('Invalid or duplicate beam/ray/bixel association')
     if identities != sorted(identities):
         raise ValueError('Reordered beam/ray/bixel associations')
-    if manifest['schema_version'] == 3:
+    if manifest['schema_version'] in {3,4}:
         if manifest.get('history_budget') not in {None, 'per_job'}:
             raise ValueError('Unsupported history budget')
         legacy_point_combined = combined and manifest['normalization']!='original_accelerator_history' and manifest.get('history_budget') != 'per_job'
@@ -79,7 +79,17 @@ def load_manifest(root):
                 raise ValueError('Job members must belong to its beam')
             denominator = j['normalization_histories']
             multiplier = len(j['members']) if manifest['normalization']=='photons_per_member_bixel' else 1
-            if type(denominator) is not int or denominator < 2 or j['histories'] != denominator*multiplier:
+            if type(denominator) is not int or denominator < 2:
+                raise ValueError('Incorrect history normalization denominator')
+            guarded = j.get('replay_policy') == 'nonempty_guard_v1'
+            if guarded:
+                replay=j['source']['replay']
+                if manifest['schema_version']!=4 or replay != dict(policy=j['replay_policy'], original_histories=denominator, transported_histories=j['histories'], omitted_empty_histories=denominator-j['histories'], guard_records=1, replay_header_histories=j['histories']+1):
+                    raise ValueError('Inconsistent replay history metadata')
+            elif j.get('replay_policy') is not None:
+                raise ValueError('Unsupported replay policy')
+            valid_history = type(j['histories']) is int and (1 <= j['histories'] <= denominator if guarded else j['histories'] == denominator*multiplier)
+            if type(denominator) is not int or denominator < 2 or not valid_history:
                 raise ValueError('Incorrect history normalization denominator')
             if not combined and len(j['members']) != 1:
                 raise ValueError('Separate job must contain one member')
@@ -93,6 +103,8 @@ def load_manifest(root):
     for path, expected in manifest["files"].items():
         if sha256(bundle_path(root, path)) != expected:
             raise ValueError(f"Bundle input was modified: {path}. Prepare a new bundle.")
+    from projects.replay_audit import enforce
+    enforce(root, manifest)
     return manifest
 
 

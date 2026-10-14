@@ -23,6 +23,7 @@ def save_planning_snapshot(ct, cst, plan, stf, root, metadata):
         exported['crop_metadata'] = matlab(manifest['crop_metadata'])
     if manifest.get('column_mapping'):
         exported['column_mapping'] = manifest['column_mapping']
+    exported['replay_metadata_json'] = json.dumps([dict(job_id=j['job_id'], replay=j.get('source',{}).get('replay')) for j in manifest['jobs']])
     exported['beamlet_execution'] = manifest.get('beamlet_execution','separate')
     from ..topas.manifest import phase_space_selection
     exported['phase_space_selection'] = phase_space_selection(manifest)

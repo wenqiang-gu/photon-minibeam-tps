@@ -301,6 +301,17 @@ def batch_report(metadata):
         'Each additional batch uses the same incident sample; it is not an independent accelerator-source sample.']
     if metadata['excluded_batches']:
         lines += ['Incomplete, excluded: '+', '.join(b['batch_id'] for b in metadata['excluded_batches'])+'.']
+    for batch in metadata.get('excluded_batches', []):
+        for job in batch.get('jobs', []):
+            lines.append(f"- {batch['batch_id']}/{job['job_id']}: {job['reason']}")
+    for item in metadata.get('replay_audit', []):
+        lines.append(f"- Replay {item['job_id']}: {item['status']}")
+    if any(j.get('replay_policy') for j in metadata['jobs']):
+        lines += ['', 'Guarded replay transports N nonempty histories once; the terminal empty guard is skipped. Dose = Sum/H, where H is the requested original-history budget, including omitted empty histories. Scorer Mean = Sum/N is not the normalized dose. Single-batch variance includes the H-N zero histories analytically.', '', '| Job | Transported N | Normalization H |', '|---|---:|---:|']
+        lines += [f"| {j['batch_id']}/{j['job_id']} | {j['histories']} | {j['normalization_histories']} |" for j in metadata['jobs']]
+    for batch in metadata.get('completion_evidence', []):
+        for job in batch['jobs']:
+            lines.append(f"- {batch['batch_id']}/{job['job_id']}: {job['evidence']}")
     return '\n'.join(lines)+'\n'
 
 
@@ -308,101 +319,107 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
     root = Path(root).resolve()
     diagnostics = []
     base_root, output_root, manifest = results.collection_context(root, diagnostics=diagnostics)
-    exported, integrity = planning_snapshot(base_root, manifest)
-    derived = output_root/'derived'
-    derived.mkdir(exist_ok=True)
-    exported['batch_metadata_json'] = json.dumps(manifest['batch_metadata'])
-    if manifest.get('column_mapping'):
-        exported['column_mapping'] = manifest['column_mapping']
-    exported['beamlet_execution'] = manifest.get('beamlet_execution','separate')
-    from ..topas.manifest import phase_space_selection
-    exported['phase_space_selection'] = phase_space_selection(manifest)
-    image = None
-    current = io.implementation_hashes()
-    old = manifest.get('implementation_sha256', {})
-    status = dict(stage=stage, bundle_id=manifest['bundle_id'], planning_snapshot_integrity=integrity,
-        implementation_differences=sorted(k for k in old.keys() | current.keys() if old.get(k)!=current.get(k)),
-        normalization=manifest['normalization'], units=manifest['units'], weight_units=manifest['weight_units'],
-        preparation_versions=manifest.get('versions', {}),
-        collection_versions={name: version(name) for name in manifest.get('versions', {})})
-    if stage == 'collect':
-        dij = results.collect_results(root, 4*1024**3, manifest=manifest, diagnostics=diagnostics)
-        exported['dij'] = dij.to_matrad()
-        # Upstream optional scenario containers can contain None cells.
-        for value in exported['dij'].values():
-            if isinstance(value, np.ndarray) and value.dtype == object:
-                for index in np.ndindex(value.shape):
-                    if value[index] is None:
-                        value[index] = np.empty(0)
-        for key in ('beamNum','rayNum','bixelNum'):
-            exported['dij'][key] += 1
-        with atomic_path(derived/'result.mat') as temp:
-            savemat(temp, exported, long_field_names=True)
-        status['matrix_shape'] = list(dij.physical_dose.flat[0].shape)
-    elif stage == 'forward':
-        weights = np.full(len(manifest['jobs']), weight_per_bixel, dtype=float) if np.isscalar(weight_per_bixel) else np.asarray(weight_per_bixel, dtype=float)
-        plots = None
-        try:
-            from .beam_dose_plot import BeamDosePlots
-            plots = BeamDosePlots(exported, manifest, weights, diagnostics)
-        except Exception as error:
-            status['dose_plot'] = dict(status='failed', error=str(error))
-            print(f'Beam plotting unavailable: {error}')
-        result = results.collect_forward(weights, root, manifest=manifest, diagnostics=diagnostics,
-                                         on_beam=plots.consume if plots is not None else None)
-        image = result['physical_dose']
-        from ..geometry.cropping import coverage_image
-        with atomic_path(derived/'dose_scoring_grid.mha') as temp:
-            sitk.WriteImage(image, str(temp))
-        scored_image = image
-        if 'physical_dose_std_error' in result:
-            with atomic_path(derived/'dose_std_error_dose_grid.mha') as temp:
-                sitk.WriteImage(result['physical_dose_std_error'], str(temp))
-        if 'physical_dose_std_error' not in result:
-            (derived/'dose_std_error_dose_grid.mha').unlink(missing_ok=True)
-        if manifest['ct_grid'] != manifest['dose_grid']:
-            grid = Grid.model_validate(manifest['ct_grid'])
-            image = sitk.Resample(image, list(grid.dimensions), sitk.Transform(), sitk.sitkLinear,
-                tuple(grid.origin), tuple(grid.resolution_vector), tuple(grid.direction_vector), 0., sitk.sitkFloat64)
-        coverage = coverage_image(scored_image, image)
-        with atomic_path(derived/'dose_coverage.mha') as temp:
-            sitk.WriteImage(coverage, str(temp))
-        status['coverage'] = dict(file='dose_coverage.mha', meaning='1: center inside scoring extent; 0: unscored, not measured zero')
-        status['scoring_grid_dose'] = 'dose_scoring_grid.mha'
-        with atomic_path(derived/'dose.mha') as temp:
-            sitk.WriteImage(image, str(temp))
-        status['weights'] = weights.tolist()
-        status['forward_uncertainty'] = manifest.get('forward_uncertainty')
-        # Beam callbacks retain only 2D views; render after the common scale is known.
-        if plots is not None:
+    try:
+        exported, integrity = planning_snapshot(base_root, manifest)
+        derived = output_root/'derived'
+        derived.mkdir(exist_ok=True)
+        exported['batch_metadata_json'] = json.dumps(manifest['batch_metadata'])
+        exported['replay_metadata_json'] = json.dumps([dict(job_id=j['job_id'], replay=j.get('source',{}).get('replay')) for j in manifest['jobs']])
+        if manifest.get('column_mapping'):
+            exported['column_mapping'] = manifest['column_mapping']
+        exported['beamlet_execution'] = manifest.get('beamlet_execution','separate')
+        from ..topas.manifest import phase_space_selection
+        exported['phase_space_selection'] = phase_space_selection(manifest)
+        image = None
+        current = io.implementation_hashes()
+        old = manifest.get('implementation_sha256', {})
+        status = dict(stage=stage, bundle_id=manifest['bundle_id'], planning_snapshot_integrity=integrity,
+            implementation_differences=sorted(k for k in old.keys() | current.keys() if old.get(k)!=current.get(k)),
+            normalization=manifest['normalization'], units=manifest['units'], weight_units=manifest['weight_units'],
+            preparation_versions=manifest.get('versions', {}),
+            collection_versions={name: version(name) for name in manifest.get('versions', {})})
+        if stage == 'collect':
+            dij = results.collect_results(root, 4*1024**3, manifest=manifest, diagnostics=diagnostics)
+            exported['dij'] = dij.to_matrad()
+            # Upstream optional scenario containers can contain None cells.
+            for value in exported['dij'].values():
+                if isinstance(value, np.ndarray) and value.dtype == object:
+                    for index in np.ndindex(value.shape):
+                        if value[index] is None:
+                            value[index] = np.empty(0)
+            for key in ('beamNum','rayNum','bixelNum'):
+                exported['dij'][key] += 1
+            with atomic_path(derived/'result.mat') as temp:
+                savemat(temp, exported, long_field_names=True)
+            status['matrix_shape'] = list(dij.physical_dose.flat[0].shape)
+        elif stage == 'forward':
+            weights = np.full(len(manifest['jobs']), weight_per_bixel, dtype=float) if np.isscalar(weight_per_bixel) else np.asarray(weight_per_bixel, dtype=float)
+            plots = None
             try:
-                status['dose_plot'] = plots.save(derived)
+                from .beam_dose_plot import BeamDosePlots
+                plots = BeamDosePlots(exported, manifest, weights, diagnostics)
             except Exception as error:
                 status['dose_plot'] = dict(status='failed', error=str(error))
-                print(f'Dose saved, but beam plotting failed: {error}')
+                print(f'Beam plotting unavailable: {error}')
+            result = results.collect_forward(weights, root, manifest=manifest, diagnostics=diagnostics,
+                                             on_beam=plots.consume if plots is not None else None)
+            image = result['physical_dose']
+            from ..geometry.cropping import coverage_image
+            with atomic_path(derived/'dose_scoring_grid.mha') as temp:
+                sitk.WriteImage(image, str(temp))
+            scored_image = image
+            if 'physical_dose_std_error' in result:
+                with atomic_path(derived/'dose_std_error_dose_grid.mha') as temp:
+                    sitk.WriteImage(result['physical_dose_std_error'], str(temp))
+            if 'physical_dose_std_error' not in result:
+                (derived/'dose_std_error_dose_grid.mha').unlink(missing_ok=True)
+            if manifest['ct_grid'] != manifest['dose_grid']:
+                grid = Grid.model_validate(manifest['ct_grid'])
+                image = sitk.Resample(image, list(grid.dimensions), sitk.Transform(), sitk.sitkLinear,
+                    tuple(grid.origin), tuple(grid.resolution_vector), tuple(grid.direction_vector), 0., sitk.sitkFloat64)
+            coverage = coverage_image(scored_image, image)
+            with atomic_path(derived/'dose_coverage.mha') as temp:
+                sitk.WriteImage(coverage, str(temp))
+            status['coverage'] = dict(file='dose_coverage.mha', meaning='1: center inside scoring extent; 0: unscored, not measured zero')
+            status['scoring_grid_dose'] = 'dose_scoring_grid.mha'
+            with atomic_path(derived/'dose.mha') as temp:
+                sitk.WriteImage(image, str(temp))
+            status['weights'] = weights.tolist()
+            status['forward_uncertainty'] = manifest.get('forward_uncertainty')
+            # Beam callbacks retain only 2D views; render after the common scale is known.
+            if plots is not None:
+                try:
+                    status['dose_plot'] = plots.save(derived)
+                except Exception as error:
+                    status['dose_plot'] = dict(status='failed', error=str(error))
+                    print(f'Dose saved, but beam plotting failed: {error}')
 
-    else:
-        raise ValueError('Collection stage must be collect or forward')
-    with atomic_path(derived/'indexing.md') as temp:
-        report = indexing_report(manifest, stage, image) + scorer_warning_report(diagnostics)
-        if output_root != base_root:
-            report = report.replace("load('steering.mat')", "load('../../../derived/steering.mat')")
-            report = report.replace("../manifest.json", "../../../manifest.json")
-            report += '\nPlanning snapshot is shared at `../../../derived/steering.mat` relative to this derived directory.\n'
-        report += batch_report(manifest['batch_metadata'])
-        if stage == 'forward':
-            from .beam_dose_plot import beam_plot_report
-            report += beam_plot_report(status['dose_plot'])
-        temp.write_text(report)
-    status['batch_metadata'] = manifest['batch_metadata']
-    status['phase_space_selection'] = phase_space_selection(manifest)
-    status['crop_metadata'] = manifest.get('crop_metadata')
-    status['scorer_warnings'] = diagnostics
-    status['review_required'] = bool(diagnostics)
-    status['status'] = 'complete'
-    write_json(derived/f'{stage}_metadata.json', status)
-    outcome = 'completed with scorer warnings; validity requires user review' if diagnostics else 'complete'
-    print(f'{root.name}: {stage} {outcome}; indexing report: {derived / "indexing.md"}')
+        else:
+            raise ValueError('Collection stage must be collect or forward')
+        with atomic_path(derived/'indexing.md') as temp:
+            report = indexing_report(manifest, stage, image) + scorer_warning_report(diagnostics)
+            if output_root != base_root:
+                report = report.replace("load('steering.mat')", "load('../../../derived/steering.mat')")
+                report = report.replace("../manifest.json", "../../../manifest.json")
+                report += '\nPlanning snapshot is shared at `../../../derived/steering.mat` relative to this derived directory.\n'
+            report += batch_report(manifest['batch_metadata'])
+            if stage == 'forward':
+                from .beam_dose_plot import beam_plot_report
+                report += beam_plot_report(status['dose_plot'])
+            temp.write_text(report)
+        status['batch_metadata'] = manifest['batch_metadata']
+        status['replay_metadata'] = [dict(job_id=j['job_id'], replay=j.get('source',{}).get('replay')) for j in manifest['jobs']]
+        status['phase_space_selection'] = phase_space_selection(manifest)
+        status['crop_metadata'] = manifest.get('crop_metadata')
+        status['scorer_warnings'] = diagnostics
+        status['review_required'] = bool(diagnostics)
+        status['status'] = 'complete'
+        write_json(derived/f'{stage}_metadata.json', status)
+        outcome = 'completed with scorer warnings; validity requires user review' if diagnostics else 'complete'
+        print(f'{root.name}: {stage} {outcome}; indexing report: {derived / "indexing.md"}')
+
+    finally:
+        manifest['_score_cache'].cleanup()
 
 
 def collect_saved_run(root, stage, *, weight_per_bixel=1.0):

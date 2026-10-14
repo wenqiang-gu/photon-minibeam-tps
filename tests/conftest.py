@@ -79,3 +79,12 @@ def isolate_editable_crop_settings(monkeypatch):
     import patient_workflow
     monkeypatch.setattr(patient_workflow, 'CT_CROP_VOXELS', None)
     monkeypatch.setattr(patient_workflow, 'ENFORCE_CT_CROP_PROTECTION', True)
+
+
+def physical_replay_records(path, dtype):
+    """Read selected particles; validate and separate the non-transported guard."""
+    import numpy as np
+    records=np.fromfile(path,dtype=dtype)
+    assert records[-1]['weight']==-1 and records[-1]['new_history']==1
+    assert np.all(records[:-1]['weight']>=0)
+    return records[:-1]

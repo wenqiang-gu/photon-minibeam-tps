@@ -72,11 +72,21 @@ All listed pairs are validated even if the prefix ends in an earlier file. Consu
 histories sequentially in list order; 200 million uses 170 million from part1 and
 30 million from part2. Requests beyond the total fail. Gaps, trailing empty histories,
 particle grouping, species, energies, directions and statistical weights are retained.
+Empty-history counts are retained in normalization metadata, not transported as empty events.
 Downstream particle trajectories are projected onto the selection plane. A selected
 bixel with no particles is rejected; increase histories or check coverage.
 
 Only selected portable TOPAS replay pairs are bundled; identical selections are shared.
 `PhaseSpaceMultipleUse = 1` is required by the current normalization assumptions.
+New projects use guarded replay (`nonempty_guard_v1`) to avoid locally reproduced
+OpenTOPAS 4.2.p3 end-of-file/empty-history replay errors. The replay contains selected
+physical particles plus one skipped empty guard record, with
+`PhaseSpaceIncludeEmptyHistories = False`. TOPAS transports **N nonempty histories**;
+`HISTORIES_PER_JOB` still requests **H original histories**, including those that
+became empty after filtering. The guard is not an accelerator history or a dose
+contribution. Its header declares N+1 histories (N reached the plane), while the
+TOPAS run requests N events. The point-source replay uses the same guard with N=H.
+Do not remove the guard or independently change the run/header history counts.
 Dose is Gy per **represented original accelerator history**, including empty histories,
 not per selected particle or sum of particle weights. A history may contribute to
 several bixels through different particles. Cross-column covariance is not estimated.

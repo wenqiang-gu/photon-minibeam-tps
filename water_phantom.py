@@ -30,10 +30,14 @@ SOURCE_TYPE = 'phase_space'  # 'point' uses the existing empirical spectrum
 # HISTORIES_PER_JOB counts original histories, not selected particles.
 PHASE_SPACE_SELECTION = "outside_field"
 PHASE_SPACE_FILE_BASES = [
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
+    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part1',
+    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part2',
+    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part3',
+    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part4',
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.

@@ -25,7 +25,10 @@ def fake_results(root):
                     for x in range(nx):
                         # Distinct XYZ and bixel patterns reveal permutations.
                         dose = (1+x+10*y+100*z)*job["bixel_index"]*1e-10
-                        f.write(f'{x}, {y}, {z}, {dose*job["histories"]:.16g}, {dose:.16g}, {job["histories"]}, {dose*2:.16g}\n')
+                        total=dose*job.get('normalization_histories',job['histories'])
+                        mean=total/job['histories']
+                        sd=mean*2 if job['histories']>1 else 0
+                        f.write(f'{x}, {y}, {z}, {total:.16g}, {mean:.16g}, {job["histories"]}, {sd:.16g}\n')
     return manifest
 
 
@@ -112,7 +115,7 @@ def test_cluster_bundle_layout(case):
     ct,_,cst,stf,engine=case
     root=engine.prepare_jobs(ct,cst,stf)
     manifest=load_manifest(root)
-    assert manifest['schema_version']==3
+    assert manifest['schema_version']==4
     assert {p.name for p in root.iterdir()}=={'inputs','jobs','results','derived','manifest.json'}
     assert not list(root.rglob('*.py'))
     for job in manifest['jobs']:

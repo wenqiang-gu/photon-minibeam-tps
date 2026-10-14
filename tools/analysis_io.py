@@ -119,6 +119,7 @@ def read_grid(path: Path) -> Grid:
         surface_center_lps_mm=surface.tolist(), coordinate_mapping="X=LPS X; Y=LPS Z; depth=LPS Y, relative to entrance center",
         scoring_grid=grid, batch_metadata=meta.get("batch_metadata", {}),
         scorer_warnings=meta.get("scorer_warnings", []),
+        replay_metadata=meta.get("replay_metadata", []),
         review_required=bool(meta.get("review_required") or meta.get("scorer_warnings")),
         phase_space_selection=meta.get("phase_space_selection"),
         uncertainty="No MC uncertainty inferred from MHA. Batch variation is conditional on fixed source replay; voxel covariance unavailable.")

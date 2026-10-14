@@ -1,4 +1,5 @@
 """Disjoint source partitions and explicit aggregate column semantics."""
+from conftest import physical_replay_records
 import json
 import shutil
 import os
@@ -29,7 +30,7 @@ def two_squares(case):
 def replay(root,job):
     text=(root/job['parameter_file']).read_text()
     stem=text.split('PhaseSpaceFileName = "')[1].split('"')[0]
-    return np.fromfile(root/(stem+'.phsp'),dtype=TOPAS_DTYPE)
+    return physical_replay_records(root/(stem+'.phsp'),dtype=TOPAS_DTYPE)
 
 
 def test_disjoint_boundaries_and_invalid_geometry(case):
@@ -111,7 +112,7 @@ def test_phase_union_once_with_history_groups(case,tmp_path):
                                 source_config={'type':'phase_space','file_base':str(base)})
         root=engine.prepare_jobs(ct,cst,stf,bundle_dir=tmp_path/mode);roots[mode]=root
         manifest=load_manifest(root)
-        assert all(j['histories']==j['normalization_histories']==10 for j in manifest['jobs'])
+        assert all(j['histories']==j['source']['nonempty_selected_histories'] and j['normalization_histories']==10 for j in manifest['jobs'])
         assert manifest['normalization']=='original_accelerator_history'
         if mode=='combined':
             a=replay(root,manifest['jobs'][0])
@@ -202,7 +203,7 @@ def test_schema_two_remains_collectable(case):
     m=load_manifest(root);m['schema_version']=2
     m.pop('beamlet_execution');m.pop('column_mapping')
     for j in m['jobs']:
-        for k in ('members','column_index','normalization_histories'):j.pop(k)
+        for k in ('members','column_index','normalization_histories','replay_policy'):j.pop(k)
     m['bundle_id']=digest_json({k:v for k,v in m.items() if k!='bundle_id'})
     (root/'manifest.json').write_text(json.dumps(m))
     fake_results(root)
@@ -255,6 +256,8 @@ def test_legacy_combined_normalization_remains_collectable(case,tmp_path):
         ct,cst,two_squares(case),bundle_dir=tmp_path/'legacy')
     m=load_manifest(root)
     m.pop('history_budget')
+    m['schema_version']=3
+    for j in m['jobs']:j.pop('replay_policy',None)
     m.update(normalization='photons_per_member_bixel',units='Gy/(photon per member bixel)',
              weight_units='photons per member bixel')
     for job in m['jobs']:

@@ -185,10 +185,25 @@ runtime; faster CSV parsing does not eliminate those other costs.
 The same `collect` and `forward` commands handle initially prepared and later-added
 batches. The current `NUMBER_OF_BATCHES` setting is irrelevant to collection.
 A setup averages all **fully completed** saved batches, using one fixed set for all
-columns. Incomplete batches are listed and excluded; malformed files that already
-exist are still rejected, including files in incomplete batches. No completed batch
-means no new dose result. Rerun collection after more batches finish to replace the
-averaged derived output.
+columns. Missing, empty, header-only, truncated-grid, and unterminated CSV outputs
+are skipped for unmarked jobs. Invalid complete rows, duplicate bins, wrong histories,
+unknown warnings and scorer/grid mismatches still fail validation. Files changing
+during validation are excluded. No completed batch means existing derived outputs
+remain untouched. Rerun collection after more batches finish to refresh the average.
+
+New Slurm workers atomically write `job_status/batch_NNN/<job>.status` as `running`,
+`succeeded`, or `failed`. Retries replace stale success before starting TOPAS.
+Running/failed jobs are skipped; a succeeded job with invalid or missing output is
+an error. Previously submitted workers and direct TOPAS runs need no marker: valid
+outputs are recorded as **CSV-complete (exit status unverified)**. Do not remove
+status files while workers are running. An abruptly killed worker may leave
+`running`; retrying through the worker replaces that state.
+
+Validation stages dose and variance arrays in temporary storage (approximately
+16 bytes per voxel per completed job), then reconstructs without parsing CSVs again.
+Set `TMPDIR` to a disk with sufficient free space if necessary. Temporary files are
+removed after reconstruction or failure. Included/skipped batches, reasons, and
+completion evidence appear in metadata and `indexing.md`.
 
 Every repeated batch has the same history count. Normalized dose is averaged,
 not summed; matrix column count and exposure-weight units remain unchanged. Forward
@@ -213,3 +228,42 @@ sampling uncertainty, for phase-space or point-source replay. Single-batch outpu
 retain their legacy scorer-variance convention. Multi-batch forward standard error
 is omitted because combined covariance is not implemented. Exposure weights are not
 multiplied by the number of repeated simulations.
+
+
+## Guarded replay and original-history normalization
+
+New projects distinguish the transported nonempty-history count **N** from the
+requested original-history count **H**. CSV history validation uses N. Collected
+dose is `Sum/H`, not the TOPAS `Mean = Sum/N`. Empty histories contribute zero dose
+but remain in H. Particle weights are preserved; neither particle count nor the sum
+of particle weights is the normalization denominator.
+
+For a voxel, let S be the scored sum and s_N the TOPAS sample standard deviation.
+The single-batch variance of the original-history mean is reconstructed as:
+
+```text
+[(N - 1) * s_N^2 + S^2 * (H - N) / (N * H)] / [H * (H - 1)]
+```
+
+This includes the H−N omitted zero histories. N=1 is supported with zero transported
+sample variance; H must be at least two. Repeated-batch variance remains conditional
+on the fixed replay sample and does not estimate upstream phase-space uncertainty.
+Cross-column covariance is still unavailable. MATLAB `replay_metadata_json`, stage
+metadata, and indexing reports record the replay policy and both history counts.
+
+Known-affected legacy replay is blocked during collection, forward reconstruction,
+batch addition and submission. No scalar correction is applied to old dose: repeated
+or misgrouped particles cannot reliably be repaired that way. Prepare and simulate a
+fresh project. Legacy projects without the detected trigger remain **unverified**,
+not certified correct; their saved normalization convention is retained.
+
+Audit existing projects without opening original source files:
+
+```sh
+python tools/audit_replay.py projects --output-dir outputs/replay-audit
+```
+
+The audit writes JSON/CSV summaries and checks replay headers, byte sizes, terminal
+records and configuration. It is not a complete particle-file integrity scan. Projects
+containing only derived dose cannot be assessed. Copied batches without their setup's
+`batches.json` are reported but are not automatically added to the collection inventory.

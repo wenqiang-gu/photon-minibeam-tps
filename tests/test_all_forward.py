@@ -1,4 +1,5 @@
 """Unrestricted replay keeps source histories, not just projected bixel members."""
+from conftest import physical_replay_records
 import json
 import shutil
 import os
@@ -42,7 +43,7 @@ def test_prefix_properties_and_sharing(case,tmp_path,histories,particles,reached
     assert r['excluded_backward_or_tangent_particles']==2
     assert r['particles_per_member_bixel']==[]  # No fictitious bixel partition.
     f=src.render(context(case))
-    data=np.fromfile(f.assets[1][1],dtype=TOPAS_DTYPE)
+    data=physical_replay_records(f.assets[1][1],dtype=TOPAS_DTYPE)
     np.testing.assert_array_equal(data['pdg'][:3],[22,11,-11])
     np.testing.assert_allclose(data['weight'][:3],[.05,.07,.09])
     np.testing.assert_array_equal(data['new_history'][:3],[True,False,True])

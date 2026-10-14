@@ -246,3 +246,69 @@ def test_default_shell_and_override(case,tmp_path):
         assert result.returncode==0,result.stderr
         assert expected in result.stdout
     assert not (root/'batches.json').exists()
+
+@pytest.mark.parametrize('unfinished', ['empty', 'header', 'bins', 'tail', 'running', 'failed'])
+def test_skip_unfinished_and_keep_mean(case, unfinished):
+    root = prepared(case)
+    baseline = results.collect_results(root, 10**8).physical_dose.flat[0].toarray()
+    batches.add(root, 1)
+    record = batches.inventory(root, load_manifest(root))[1]
+    batch_results(root, record, 5)
+    job = record['jobs'][0]
+    path = root/job['output']
+    lines = path.read_text().splitlines(keepends=True)
+    if unfinished == 'empty': path.write_text('')
+    elif unfinished == 'header': path.write_text(lines[0])
+    elif unfinished == 'bins': path.write_text(''.join(lines[:-1]))
+    elif unfinished == 'tail': path.write_text(''.join(lines[:-1])+lines[-1][:3])
+    else:
+        status = root/'job_status'/'batch_001'/(job['job_id']+'.status')
+        status.parent.mkdir(parents=True);status.write_text(unfinished+'\n')
+    np.testing.assert_allclose(results.collect_results(root,10**8).physical_dose.flat[0].toarray(),baseline)
+    forward = results.collect_forward([1,1],root)
+    np.testing.assert_allclose(sitk.GetArrayFromImage(forward['physical_dose']).ravel(),baseline.sum(axis=1))
+    _,_,m = results.collection_context(root)
+    assert m['batch_metadata']['number_averaged']==1
+    assert m['batch_metadata']['excluded_batches'][0]['jobs']
+    m['_score_cache'].cleanup()
+
+
+def test_successful_worker_incomplete_is_error(case):
+    root = prepared(case)
+    job = load_manifest(root)['jobs'][0]
+    (root/job['output']).write_text('')
+    status = root/'job_status'/'batch_000'/(job['job_id']+'.status')
+    status.parent.mkdir(parents=True);status.write_text('succeeded\n')
+    with pytest.raises(ValueError, match='Empty CSV'):
+        results.collect_forward([1,1],root)
+
+
+def test_no_complete_preserves_outputs(case):
+    from minibeam.topas.contracts import ResultsPendingError
+    root = prepared(case)
+    collect_bundle(root,'forward')
+    before = {p.name:p.read_bytes() for p in (root/'derived').iterdir() if p.is_file()}
+    for job in load_manifest(root)['jobs']:
+        (root/job['output']).write_text('')
+    with pytest.raises(ResultsPendingError):collect_bundle(root,'forward')
+    assert before == {p.name:p.read_bytes() for p in (root/'derived').iterdir() if p.is_file()}
+
+
+def test_changing_csv_excluded_and_cache_used_once(case, monkeypatch):
+    root = prepared(case);batches.add(root,1)
+    record = batches.inventory(root,load_manifest(root))[1];batch_results(root,record,3)
+    real = results._read_score
+    calls=[]
+    def read(*args, **kwargs):
+        calls.append(args[1]['job_id'])
+        result=real(*args, **kwargs)
+        if args[1]['job_id'].startswith('batch_001/'):
+            with (root/args[1]['output']).open('a') as f:f.write('\n')
+        return result
+    monkeypatch.setattr(results,'_read_score',read)
+    _,_,manifest=results.collection_context(root)
+    assert manifest['batch_metadata']['included_batches']==['batch_000']
+    count=len(calls)
+    list(results.iter_scores(root,manifest=manifest))
+    assert len(calls)==count
+    assert not Path(manifest['_score_cache'].name).exists()

@@ -1,4 +1,5 @@
 """Outside-field replay is the disjoint downstream complement of field replay."""
+from conftest import physical_replay_records
 import numpy as np
 import pytest
 from minibeam.sources.phase_space import PhaseSpaceBeamletSource
@@ -14,7 +15,7 @@ def test_partition_multifile(case,tmp_path,histories):
         src.prepare(case[3],histories,execution='combined')
         assert len(src.selections)==1
         state=next(iter(src.selections.values()));record=state['record']
-        arrays[mode]=np.fromfile(src.render(context(case)).assets[1][1],dtype=TOPAS_DTYPE)
+        arrays[mode]=physical_replay_records(src.render(context(case)).assets[1][1],dtype=TOPAS_DTYPE)
         assert record['represented_original_histories']==histories
         assert record['excluded_backward_or_tangent_particles']==2
         if mode=='outside_field':
@@ -76,3 +77,31 @@ def test_outside_batch_average(case,tmp_path):
     batch_results(root,batches.inventory(root,load_manifest(root))[1],3)
     merged=results.collect_results(root,10**8).physical_dose.flat[0].toarray()
     np.testing.assert_allclose(merged,2*original)
+
+
+@pytest.mark.topas
+def test_three_way_transport_additivity(case,tmp_path):
+    import os, subprocess
+    from minibeam import TOPASPhotonEngine
+    from minibeam.topas.manifest import load_manifest
+    executable=os.environ.get('PHOTON_TPS_TOPAS')
+    if not executable:pytest.skip('Set PHOTON_TPS_TOPAS for transport comparison')
+    count=5000
+    records=[r for _ in range(count) for r in
+             [(1,-2,0,0,0,0,.05,1,0),(1,2,.5,0,0,0,.05,0,0)]]
+    base=make_iaea(tmp_path/'source',records,original=2*count)
+    ct,plan,cst,stf,_=case
+    stf=stf.model_copy(deep=True);stf.beams=stf.beams[:1]
+    totals={}
+    for mode in ('field','outside_field','all_forward'):
+        engine=TOPASPhotonEngine(plan,water=True,histories=2*count,num_threads=2,
+            beamlet_execution='combined',bundle_dir=str(tmp_path/mode),
+            source_config={'type':'phase_space','file_base':str(base),'selection':mode})
+        root=engine.prepare_jobs(ct,cst,stf)
+        job=load_manifest(root)['jobs'][0]
+        assert job['histories']==count and job['normalization_histories']==2*count
+        p=subprocess.run([executable,job['parameter_file']],cwd=root,capture_output=True,text=True,timeout=120)
+        assert p.returncode==0,p.stdout+p.stderr
+        totals[mode]=float(engine.collect_results(root).physical_dose.flat[0].sum())
+    assert min(totals.values())>0
+    assert totals['all_forward']==pytest.approx(totals['field']+totals['outside_field'],rel=.15)

@@ -125,14 +125,35 @@ def validated_chunks(info, audit, chunk_size=1_000_000):
 
 
 def write_topas_header(path, histories, reached, particles):
-    # Empty histories are encoded in the two history totals. Native TOPAS
-    # precheck appends them on replay with IncludeEmptyHistories=True.
+    # Header describes this replay stream. Guarded replay deliberately differs
+    # from the accelerator-history budget stored in the manifest.
     Path(path).write_text('TOPAS Binary Phase Space\n\n'
         f'Number of Original Histories: {histories}\n'
         f'Number of Original Histories that Reached Phase Space: {reached}\n'
         f'Number of Scored Particles: {particles}\n'
         f'Number of Bytes per Particle: {TOPAS_DTYPE.itemsize}\n')
 
+
+
+def finish_guarded_replay(base, original_histories, nonempty_histories, particles):
+    """Skip physical empty events, preserving their zero contributions analytically.
+
+    The terminal negative-weight record is a reader guard, never transported.
+    Header counts describe the replay stream (N + one guard), not accelerator H.
+    """
+    from projects.replay_audit import POLICY
+    if not 1 <= nonempty_histories <= original_histories:
+        raise ValueError('Invalid guarded replay history counts')
+    if Path(str(base)+'.phsp').stat().st_size != particles*TOPAS_DTYPE.itemsize:
+        raise ValueError('Replay particle count differs from file size')
+    guard = np.zeros(1, dtype=TOPAS_DTYPE)
+    guard['weight']=-1.;guard['new_history']=1;guard['pdg']=22
+    with Path(str(base)+'.phsp').open('ab') as stream:guard.tofile(stream)
+    write_topas_header(Path(str(base)+'.header'),nonempty_histories+1,nonempty_histories,particles)
+    return dict(policy=POLICY, original_histories=original_histories,
+                transported_histories=nonempty_histories,
+                omitted_empty_histories=original_histories-nonempty_histories,
+                guard_records=1, replay_header_histories=nonempty_histories+1)
 
 def validated_parts(infos, audits):
     """Read distinct history batches in order, including unused suffix files."""

@@ -58,14 +58,19 @@ def signed(value, key):
         raise ValueError('Integrity mismatch: ' + key)
 
 
-def base_manifest(root):
+def base_manifest(root, write_report=True):
     manifest = read(Path(root) / 'manifest.json')
-    if manifest.get('schema_version') not in (2, 3):
+    if manifest.get('schema_version') not in (2, 3, 4):
         raise ValueError('Unsupported base manifest schema')
     signed(manifest, 'bundle_id')
     for name, expected in manifest['files'].items():
         if sha256(within(root, name)) != expected:
             raise ValueError('Modified saved input: ' + name)
+    try:
+        from replay_audit import enforce
+    except ImportError:
+        from projects.replay_audit import enforce
+    enforce(root, manifest, write_report=write_report)
     return manifest
 
 
@@ -171,7 +176,7 @@ def locked(root):
 
 
 def _add(root, count, dry_run, total=None):
-    manifest = base_manifest(root)
+    manifest = base_manifest(root, write_report=not dry_run)
     batches = inventory(root, manifest)
     if total is not None:
         count = max(0, total - len(batches))

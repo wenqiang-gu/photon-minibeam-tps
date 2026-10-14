@@ -1,3 +1,4 @@
+from conftest import physical_replay_records
 from pathlib import Path
 import shutil
 import numpy as np
@@ -29,12 +30,12 @@ def test_prefix_crossing(case,parts,histories,allocation,selected,nonempty):
     assert r['nonempty_selected_histories']==nonempty
     assert r['empty_histories']==histories-nonempty
     assert r['available_original_histories']==24
-    data=np.fromfile(p.assets[1][1],dtype=TOPAS_DTYPE)
+    data=physical_replay_records(p.assets[1][1],dtype=TOPAS_DTYPE)
     assert int(data['new_history'].sum())==nonempty
     np.testing.assert_allclose(data['weight'],.05)
     assert set(data['pdg']) >= {22,11}
     # Deterministic replay, including the boundary's new-history flags.
-    old=data.tobytes();s.prepare(case[3],histories)
+    old=Path(p.assets[1][1]).read_bytes();s.prepare(case[3],histories)
     assert Path(s.render(context(case)).assets[1][1]).read_bytes()==old
 
 

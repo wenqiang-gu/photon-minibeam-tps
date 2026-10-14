@@ -141,12 +141,13 @@ class JobWriter:
                     if self.seed + index - 1 > 2**31 - 1:
                         raise ValueError("Per-job random seed overflows TOPAS integer range")
                     name = f"beam_{bi:06d}" if self.beamlet_execution == 'combined' else f"bixel_{index:06d}"
-                    transport_histories = self.histories
+                    transport_histories = source.get('replay',{}).get('transported_histories',self.histories)
                     job = {"job_id": name, "bixel_index": index, "beam_index": bi,
                            "ray_index": 0 if self.beamlet_execution == 'combined' else ri,
                            "beamlet_index": 0 if self.beamlet_execution == 'combined' else li,
                            "column_index": index, "members": members,
                            "normalization_histories": self.histories,
+                           **({"replay_policy": source["replay"]["policy"]} if "replay" in source else {}),
                            "gantry_angle_deg": float(beam.gantry_angle),
                            "couch_angle_deg": float(beam.couch_angle),
                            "iso_center_lps_mm": np.asarray(beam.iso_center).tolist(),
@@ -258,7 +259,7 @@ class JobWriter:
                  for p in sorted(root.rglob("*")) if p.is_file()}
         versions = {name: metadata.version(name) for name in
                     ("pyRadPlan", "numpy", "scipy", "SimpleITK", "pydicom")}
-        manifest = {"schema_version": 3, "history_budget": "per_job", "beamlet_execution": self.beamlet_execution, "request_id": request_id, "files": files,
+        manifest = {"schema_version": 4, "history_budget": "per_job", "beamlet_execution": self.beamlet_execution, "request_id": request_id, "files": files,
                     "implementation_sha256": definition["implementation_sha256"],
                     "enable_opengl": self.enable_opengl, "num_threads": self.num_threads,
                     "versions": versions, "topas_target": "4.2.p3", "jobs": jobs,

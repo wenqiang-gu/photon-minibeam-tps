@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 import numpy as np
-from .iaea import read_header, validated_parts, TOPAS_DTYPE, write_topas_header
+from .iaea import read_header, validated_parts, TOPAS_DTYPE, finish_guarded_replay
 from ..geometry.spatial import beam_basis
 from ..geometry.coordinates import topas_angles
 from ..topas.contracts import ParameterFragment, SourceDescription
@@ -72,7 +72,7 @@ class PhaseSpaceBeamletSource:
                 item = {'selection_mode': 'all_forward'}  # Shared local replay for every beam.
             if self.selection_mode == 'outside_field':
                 item = dict(item, selection_mode='outside_field')
-            key=digest_json(item); selections[key]=item
+            key=digest_json(dict(selection=item,replay_policy='nonempty_guard_v1')); selections[key]=item
             job += 1; job_keys[members[0]['bixel_index']]=key
         if not job:raise ValueError('No phase-space bixels to prepare')
         if self._temporary:self._temporary.cleanup()
@@ -144,10 +144,9 @@ class PhaseSpaceBeamletSource:
             if state['particles']==0 or np.any(state['member_counts']==0):
                 raise ValueError(f"Phase-space bixel at {state['selection']} selects no particles; "
                                  'increase HISTORIES_PER_JOB or check selection coverage. No dose was fabricated.')
-            # Header totals retain the requested ORIGINAL history count, including
-            # gaps and filtered-empty histories, never the selected particle count.
-            write_topas_header(directory/f'{key}.header',histories,state['reached'],state['particles'])
-            state['record']={'model':{'all_forward':'phase_space_all_forward', 'outside_field':'phase_space_outside_field', 'field':'phase_space_square_beamlet'}[self.selection_mode],
+            replay = finish_guarded_replay(directory/key,histories,state['reached'],state['particles'])
+            print(f"Replay: {histories:,} original histories; {state['reached']:,} transported nonempty histories")
+            state['record']={'replay':replay, 'model':{'all_forward':'phase_space_all_forward', 'outside_field':'phase_space_outside_field', 'field':'phase_space_square_beamlet'}[self.selection_mode],
                 'selection_mode':self.selection_mode,**({'selections':state['selection']['squares']} if 'squares' in state['selection'] else {'selection':state['selection']}),
                 'boundary_rule':'none; all downstream particles' if self.selection_mode == 'all_forward' else ('complement of lower-inclusive, upper-exclusive square union' if self.selection_mode == 'outside_field' else 'lower inclusive, upper exclusive'),'represented_original_histories':histories,
                 'nonempty_selected_histories':state['reached'],'empty_histories':histories-state['reached'],
@@ -193,7 +192,7 @@ class PhaseSpaceBeamletSource:
         lines += ['s:So/Beam/Type = "PhaseSpace"','s:So/Beam/Component = "Source"',
                   f's:So/Beam/PhaseSpaceFileName = "{stem}"',
                   'b:So/Beam/PhaseSpacePreCheck = "True"',
-                  'b:So/Beam/PhaseSpaceIncludeEmptyHistories = "True"',
+                  'b:So/Beam/PhaseSpaceIncludeEmptyHistories = "False"',
                   'i:So/Beam/PhaseSpaceMultipleUse = 1']
         assets=tuple((stem+suffix,Path(self._temporary.name)/(key+suffix)) for suffix in ('.header','.phsp'))
         return ParameterFragment('\n'.join(lines)+'\n',assets=assets,record={**state['record'],

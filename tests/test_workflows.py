@@ -94,7 +94,8 @@ def test_globals_used_through_collection_and_forward(monkeypatch,case,tmp_path,s
     assert len(calls)==1
     root=tmp_path/'workflow'
     manifest=fake_results(root)
-    assert all(job['histories']==workflow.HISTORIES_PER_JOB for job in manifest['jobs'])
+    assert all(job['normalization_histories']==workflow.HISTORIES_PER_JOB for job in manifest['jobs'])
+    assert all(1 <= job['histories'] <= workflow.HISTORIES_PER_JOB for job in manifest['jobs'])
     if source_type == 'phase_space':
         for suffix in ('.header', '.phsp'):
             Path(workflow.PHASE_SPACE_FILE_BASES[0] + suffix).unlink()

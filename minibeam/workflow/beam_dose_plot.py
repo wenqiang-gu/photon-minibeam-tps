@@ -186,6 +186,10 @@ class BeamDosePlots:
                 if batch:
                     record['batch_metadata'] = batch
                     notices.append(f"Mean of {batch['number_averaged']} transport batch(es); fixed source sample reused.")
+                    if any(j.get('replay_policy') for j in batch['jobs']):
+                        notices.append('Guarded replay: nonempty histories transported; normalization includes omitted empty histories.')
+                    elif any(r.get('status')=='legacy_unverified' for r in batch.get('replay_audit', [])):
+                        notices.append('Legacy replay remains unverified for end-of-file handling.')
                 if slab['fallback']: notices.append(slab['fallback'])
                 if self.missing: notices.append('Target unavailable: '+', '.join(self.missing))
                 if not view['dose'].any(): notices.append('This beam has zero dose.')

@@ -30,16 +30,16 @@ The following production projects are scheduled for various aims.
 
 ### Basic modeling
 Using Elekta_Precise_6MV phase space file
-- [ ] contribution from particles outside field/bixels: `openfield-10x10`, `openfield-10x10-inbixel`, `openfield-10x10-outside`
+- [ ] contribution from particles outside field/bixels: `openfield-10x10` (replace with openfield-10x10-allforward), `openfield-10x10-inbixel`, `openfield-10x10-outside`
 - [x] verify collimator orentation (slit length along X): `slits-10x10` 
 
 ### MLC/jaw: position and angle
-Using Elekta phase space + 2mm focal spot spread
-- [ ] MLC: , jaw: : 
+Using Elekta phase space + 2mm focal spot spread (distance to source: MLC 350mm, jaw 470mm)
+- [ ] baseline: 
 
 ### Source fine tuning
-Basic model: Using Elekta phase space + 2mm focal spot spread
-- [ ] energy shift: -0.5MeV, + 0.5MeV
+Basic model: Using Elekta phase space (baseline: 2mm focal spot spread)
+- [ ] energy peak value variation: -0.1MeV, +0.1MeV
 - [ ] focal spot: 2.5mm, 1.5mm
 
 ## Phase-space sensitivity sources

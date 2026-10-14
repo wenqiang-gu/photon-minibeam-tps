@@ -10,8 +10,12 @@ _CHUNK_ROWS = 100_000
 _COORDINATES = re.compile(r'^\s*[+-]?[0-9]+\s*,\s*[+-]?[0-9]+\s*,\s*[+-]?[0-9]+\s*,')
 
 
+class IncompleteScoreError(ValueError):
+    """CSV ended before a complete scorer result was published."""
+
+
 def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
-                 chunk_rows=_CHUNK_ROWS):
+                 chunk_rows=_CHUNK_ROWS, detect_incomplete=False):
     """Yield arrays of native row indices, normalized dose and mean variance.
 
     Parse and validate zero bins too; sparsity never excuses missing records.
@@ -43,7 +47,8 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
         total, mean, histories, sd = stats.T
         if np.any(stats[:, [0, 1, 3]] < 0):
             raise ValueError('Negative dose/statistics')
-        if np.any(histories != job['histories']) or np.any(histories < 2):
+        guarded = job.get('replay_policy') == 'nonempty_guard_v1'
+        if np.any(histories != job['histories']) or np.any(histories < (1 if guarded else 2)):
             raise ValueError('Actual scorer history count differs from the requested count')
         per_history = total / histories
         # Match math.isclose's symmetric relative tolerance, not np.isclose's
@@ -64,11 +69,28 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
         seen[rows] = True
         count += len(rows)
         denominator = job.get('normalization_histories', job['histories'])
-        scale = histories / denominator
-        return rows, total / denominator, sd * sd / histories * scale * scale
+        if guarded:
+            if denominator < job['histories'] or denominator < 2:
+                raise ValueError('Invalid original-history denominator')
+            if job['histories']==1 and np.any(sd!=0):
+                raise ValueError('Single transported history must have zero scorer SD')
+            # Add H-N zero-dose histories analytically. This stable form equals
+            # (Q-S^2/H)/(H*(H-1)), Q=(N-1)*sd_N^2+S^2/N.
+            variance = ((histories-1)*sd*sd + total*total*((denominator-histories)/histories/denominator)) / denominator / (denominator-1)
+        else:
+            scale = histories / denominator
+            variance = sd * sd / histories * scale * scale
+        if not np.isfinite(variance).all():
+            raise ValueError('Nonfinite reconstructed variance')
+        return rows, total / denominator, variance
 
     with open(path, newline='') as stream:
         for line in stream:
+            if detect_incomplete and not line.endswith(('\n', '\r')):
+                # Validate preceding complete rows before classifying the tail.
+                if lines:
+                    yield parse(lines)
+                raise IncompleteScoreError('Unterminated final CSV line')
             if line.startswith('#'):
                 if started:
                     raise ValueError('Unexpected header after scorer data')
@@ -108,8 +130,15 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
                 lines = []
         if lines:
             yield parse(lines)
+    if detect_incomplete and not started:
+        _scorer_warning(headers)
+        if any(h.startswith('# Results for scorer:') for h in headers) and f"# Results for scorer: {job['scorer']}" not in headers:
+            raise ValueError('Scorer identity mismatch')
+        if any(h.startswith('# DoseToMedium') for h in headers):
+            _validate_header(headers, job, grid)
+        raise IncompleteScoreError('Empty CSV or unfinished scorer header')
     if count != size:
-        raise ValueError(f'Incomplete scorer grid: expected {size} bins, found {count}')
+        raise IncompleteScoreError(f'Incomplete scorer grid: expected {size} bins, found {count}')
 
 
 def score_rows(path, job, grid, *, diagnostics=None, normalization=None):

@@ -4,7 +4,7 @@ import tempfile
 import numpy as np
 from .energy import EmpiricalSpectrum
 from .bixels import groups, contains
-from .iaea import TOPAS_DTYPE, write_topas_header
+from .iaea import TOPAS_DTYPE, finish_guarded_replay
 from ..geometry.spatial import beam_basis
 from ..geometry.coordinates import topas_angles
 from ..topas.contracts import JobContext, ParameterFragment, SourceDescription
@@ -57,7 +57,7 @@ class PointBeamletSource:
                           histories_per_job=histories, selected_particles=histories,
                           photons_per_member=counts.tolist(), member_probabilities=probabilities.tolist(),
                           source_seed=seed, energy_models=energy_records, recycling=False)
-            key = digest_json(dict(record, members=members))
+            key = digest_json(dict(record, members=members,replay_policy="nonempty_guard_v1"))
             path = directory/(key+'.phsp')
             with path.open('wb') as stream:
                 for member, context, member_count in zip(members,contexts,counts):
@@ -102,7 +102,7 @@ class PointBeamletSource:
                         if not np.isfinite(out['energy']).all() or np.any(out['energy']<=0):
                             raise ValueError('Photon energy cannot be represented in TOPAS binary format')
                         out.tofile(stream);remaining-=count
-            write_topas_header(directory/(key+'.header'),histories,histories,histories)
+            record['replay'] = finish_guarded_replay(directory/key,histories,histories,histories)
             self.states[members[0]['bixel_index']] = (key,record,tuple(energy_assets))
 
     def describe(self, context):
@@ -121,7 +121,7 @@ class PointBeamletSource:
             lines += [f'd:Ge/Source/Trans{axis} = {pos:.12g} mm', f'd:Ge/Source/Rot{axis} = {rot:.12g} deg']
         lines += ['s:So/Beam/Type = "PhaseSpace"','s:So/Beam/Component = "Source"',
                   f's:So/Beam/PhaseSpaceFileName = "{stem}"','b:So/Beam/PhaseSpacePreCheck = "True"',
-                  'b:So/Beam/PhaseSpaceIncludeEmptyHistories = "True"','i:So/Beam/PhaseSpaceMultipleUse = 1']
+                  'b:So/Beam/PhaseSpaceIncludeEmptyHistories = "False"','i:So/Beam/PhaseSpaceMultipleUse = 1']
         assets=tuple((stem+suffix,Path(self._temporary.name)/(key+suffix)) for suffix in ('.header','.phsp'))
         return ParameterFragment('\n'.join(lines)+'\n',assets=assets+energy_assets,record=dict(record, **record['energy_models'][0],
             source_lps_mm=focal.tolist(),aim_lps_mm=(context.beam.iso_center+context.ray.ray_pos).tolist(),

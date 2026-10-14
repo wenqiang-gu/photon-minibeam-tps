@@ -154,3 +154,18 @@ Batch appending validates saved input hashes and uses an exclusive lock plus ato
 index publication. A leftover lock or an unindexed batch folder after an interrupted
 process requires inspection before retrying; do not remove it while another writer
 is active. Study additions are atomic per setup, not a transaction across the study.
+
+
+### Replay safety checks
+
+Copy `projects/replay_audit.py` alongside `add_batches.py` and `submit_topas.py` when
+updating the cluster helpers. It uses only the Python standard library. Submission
+and batch addition reject known-affected legacy replay configurations and invalid
+new guarded replay. Dry runs do not write audit files. A rejection requires fresh
+local preparation and a new simulation; do not edit old CSVs or rescale old dose.
+
+New guarded jobs request only selected nonempty histories from TOPAS. Their original
+history normalization remains saved separately. A lower TOPAS event count than
+`HISTORIES_PER_JOB` is expected and does not reduce the represented exposure.
+No OpenTOPAS rebuild is required for this workaround. The replay issue was reproduced
+locally with 4.2.p3; this is not an upstream-confirmed bug advisory.

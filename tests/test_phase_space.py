@@ -1,3 +1,4 @@
+from conftest import physical_replay_records
 import json
 from pathlib import Path
 import shutil
@@ -96,7 +97,7 @@ def test_selection_grouping_assets_and_energy(case,phase_base):
     part=source.render(context(case));record=part.record
     assert record['selected_particles']==4 and record['nonempty_selected_histories']==2
     assert record['empty_histories']==8 and record['excluded_particles']==1
-    particles=np.fromfile(part.assets[1][1],dtype=TOPAS_DTYPE)
+    particles=physical_replay_records(part.assets[1][1],dtype=TOPAS_DTYPE)
     assert particles['new_history'].tolist()==[1,0,1,0]
     assert particles['pdg'].tolist()==[22,11,-11,22]
     np.testing.assert_allclose(particles['weight'],.05)
@@ -186,7 +187,7 @@ def test_trajectory_projection_and_history_reconstruction(case,tmp_path,monkeypa
     original=module.validated_chunks
     monkeypatch.setattr(module,'validated_chunks',lambda info,audit:original(info,audit,chunk_size=1))
     source=PhaseSpaceBeamletSource(base);source.prepare(case[3],10)
-    part=source.render(context(case));a=np.fromfile(part.assets[1][1],dtype=TOPAS_DTYPE)
+    part=source.render(context(case));a=physical_replay_records(part.assets[1][1],dtype=TOPAS_DTYPE)
     assert a['pdg'].tolist()==[11,-11] and a['new_history'].tolist()==[1,1]
     assert part.record['empty_histories']==8
     assert part.record['excluded_backward_or_tangent_particles']==1
@@ -228,7 +229,7 @@ def test_exhaustive_partition_matches_unfiltered_replay(case,tmp_path):
     other=beam.rays[0].model_copy(deep=True);other.ray_pos=beam_basis(beam)@np.array([5.,0,0]);beam.rays.append(other)
     source=PhaseSpaceBeamletSource(base);source.prepare(stf,count)
     # The disjoint replay pairs retain every original particle exactly once.
-    arrays=[np.fromfile(source.render(JobContext(beam,ray,ray.beamlets[0],patient_center(ct),i+1,1,i+1,1)).assets[1][1],dtype=TOPAS_DTYPE)
+    arrays=[physical_replay_records(source.render(JobContext(beam,ray,ray.beamlets[0],patient_center(ct),i+1,1,i+1,1)).assets[1][1],dtype=TOPAS_DTYPE)
             for i,ray in enumerate(beam.rays)]
     assert sum(len(a) for a in arrays)==len(records)
     assert all(int(a['new_history'].sum())==count for a in arrays)
@@ -262,7 +263,7 @@ def test_phase_space_result_validation(case,phase_base,fault):
     else:
         if fault=='truncated':lines.pop()
         if fault=='duplicate':lines.append(lines[-1])
-        if fault=='histories':lines[-1]=lines[-1].replace(', 10,',', 4,') # selected particles are NOT histories
+        if fault=='histories':lines[-1]=lines[-1].replace(', 2,',', 4,') # selected particles are NOT histories
         if fault=='configuration':lines[1]='# Results for scorer: Dose_from_another_configuration'
         path.write_text('\n'.join(lines)+'\n')
     with pytest.raises((ValueError,ResultsPendingError)):engine.collect_results(root)

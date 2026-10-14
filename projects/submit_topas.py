@@ -84,7 +84,7 @@ def thread_setting(job, root, cache=None):
     return None if found is None else found[1]
 
 
-def discover(root):
+def discover(root, dry_run=False):
     # This sibling module is standard-library only; cluster nodes need no package.
     try:
         import add_batches as batches
@@ -99,6 +99,11 @@ def discover(root):
     tasks = []
     for bundle in roots:
         manifest = read_json(bundle/'manifest.json')
+        try:
+            from replay_audit import enforce
+        except ImportError:
+            from projects.replay_audit import enforce
+        enforce(bundle, manifest, write_report=not dry_run)
         records = batches.inventory(bundle, manifest) if (bundle/'batches.json').exists() else [dict(batch_id='batch_000',jobs=manifest['jobs'])]
         if selected_batch:
             records = [b for b in records if b['batch_id']==selected_batch]
@@ -180,7 +185,7 @@ def main(argv=None):
     if not env.is_file() or not os.access(env,os.R_OK):
         raise ValueError(f'Environment script is not readable: {env}')
     clean(env)
-    tasks = discover(root)
+    tasks = discover(root, dry_run=args.dry_run)
     for task in tasks:
         inferred = task['inferred_threads']
         if inferred is not None and args.cpus_per_task is not None and inferred != args.cpus_per_task:

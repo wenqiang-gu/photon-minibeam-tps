@@ -64,6 +64,15 @@ def test_study_submission_worker_and_history(tmp_path,tools,capsys):
     assert run.returncode==7
     assert str(root/'shift_025')+'|loaded|' in run.stdout
     assert 'exit=7 elapsed=' in run.stdout
+    status=root/'shift_025/job_status/batch_000/bixel_000001.status'
+    assert status.read_text().strip()=='failed'
+    status.write_text('succeeded\n')
+    topas.write_text('#!/bin/sh\ntest "$(cat job_status/batch_000/bixel_000001.status)" = running || exit 9\nexit 0\n')
+    retry=subprocess.run(['bash',str(dest/'worker.sh'),str(dest/'tasks.tsv'),str(env)],
+        env=dict(os.environ,SLURM_ARRAY_TASK_ID='1'),capture_output=True)
+    assert retry.returncode==0
+    assert status.read_text().strip()=='succeeded'
+    assert not list(status.parent.glob('*.tmp.*'))
     invoke(root,env,'--dry-run')
     assert 'Previously submitted' in capsys.readouterr().out
     assert len(list((root/'slurm').iterdir()))==1
