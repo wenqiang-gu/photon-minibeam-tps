@@ -383,12 +383,14 @@ def run_lateral(run: Run):
     for index, depth in enumerate(s["depths_mm"]):
         plane = None if a.mc_only else map_at(planes, depth)
         if not a.combine_depths or index == 0:
-            fig, axes = plt.subplots(1, len(axes_to_plot), figsize=(7*len(axes_to_plot), 5),
-                                     squeeze=False, layout="constrained")
+            fig, axes = plt.subplots(1 if a.mc_only else 2, len(axes_to_plot),
+                                     figsize=(7*len(axes_to_plot), 5 if a.mc_only else 7),
+                                     sharex="col", squeeze=False, layout="constrained",
+                                     gridspec_kw=None if a.mc_only else {"height_ratios": [3, 1]})
         color = plt.get_cmap("tab10")(index % 10) if a.combine_depths else None
         suffix = f" · {depth:g} mm" if a.combine_depths else ""
         fig.suptitle(f"MC shifts in comparison coordinates: X={sx:+g} mm, Y={sy:+g} mm\n{norm_label}")
-        for axis, ax in zip(axes_to_plot, axes[0]):
+        for column, (axis, ax) in enumerate(zip(axes_to_plot, axes[0])):
             raw, actual = mc_profile(grid, axis, depth, hx, hy)
             mc = raw.scaled(scale)
             draw(ax, mc, f"MC {mapping[axis].upper()}{suffix}", color=color,
@@ -410,10 +412,25 @@ def run_lateral(run: Run):
                      band_alpha=.08 if a.combine_depths else .15)
                 rows += rows_curve(measured, depth_mm=depth, source="measurement", axis=axis,
                                    original_axis=axis, actual_mc_depth_mm=None, raw_scale=1.0, unit=unit)
+                # Compare the already normalized MC to measurement; do not fit again.
+                # Interpolate only inside MC coverage and omit nonpositive denominators.
+                relative = ratio(mc, measured, 0)
+                ratio_ax = axes[1, column]
+                draw(ratio_ax, relative, f"MC / measurement{suffix}", color=color)
+                if not a.combine_depths or index == 0:
+                    ratio_ax.axhline(1, color="gray", linewidth=.8, linestyle="--")
+                ratio_ax.set(xlabel=f"Comparison {axis.upper()} (mm)",
+                             ylabel="MC / measurement", ylim=(.95, 1.05))
+                if a.combine_depths:
+                    ratio_ax.legend(fontsize=8)
+                rows += rows_curve(relative, depth_mm=depth, source="mc/measurement", axis=axis,
+                                   actual_mc_depth_mm=actual, unit="ratio")
             ax.set(xlabel=f"Comparison {axis.upper()} (mm)", ylabel=f"Dose ({unit})",
                    title=(f"{s['field_cm']} cm {a.source} · combined depths" if a.combine_depths else
                           f"{s['field_cm']} cm {a.source} · {depth:g} mm (MC {actual:g} mm)"))
             ax.legend(fontsize=8)
+            if not a.mc_only:
+                ax.set_xlabel("")
         depth_mapping.append(dict(requested_depth_mm=depth, actual_mc_depth_mm=actual))
         if not a.combine_depths:
             name = f"lateral-{a.axis}-depth-{depth:g}mm"
@@ -425,6 +442,12 @@ def run_lateral(run: Run):
         figures.append(f"{name}.png")
     run.meta["results"]["lateral_figures"] = figures
     run.meta["results"]["depth_mapping"] = depth_mapping
+    if not a.mc_only:
+        run.meta["results"]["lateral_ratio"] = dict(
+            definition="normalized MC / measurement", display_limits=[.95, 1.05],
+            interpolation="MC interpolated to measurement coordinates without extrapolation",
+            exclusions="Nonpositive measurement values and unavailable MC samples",
+            note="Ratios outside display limits remain in profiles.csv")
     run.prepare()
     write_rows(run.out / "profiles.csv", rows)
 

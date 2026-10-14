@@ -28,9 +28,8 @@ pvdr_mc_axis = "y"
 pvdr_data_axis = "y"
 ignore_edge_peaks = true
 peak_prominence_fraction = 0.5
-# expected_ctc_mm = 9.3
 # Omit offsets for automatic coordinate-midpoint centering.
-# slit_map_x_offset_mm = 102.3
+slit_map_x_offset_mm = 101.3
 # slit_map_y_offset_mm = 102.3
 
 [fields."2"]

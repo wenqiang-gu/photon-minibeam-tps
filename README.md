@@ -31,7 +31,7 @@ The following production projects are scheduled for various aims.
 ### Basic modeling
 Using Elekta_Precise_6MV phase space file
 - [ ] contribution from particles outside field/bixels: `openfield-10x10`, `openfield-10x10-inbixel`, `openfield-10x10-outside`
-- [ ] verify collimator orentation (slit length along X): `slits-10x10` 
+- [x] verify collimator orentation (slit length along X): `slits-10x10` 
 
 ### MLC & jaw position
 Using Elekta phase space + 2mm focal spot spread

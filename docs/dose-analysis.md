@@ -42,6 +42,8 @@ SimpleITK's NumPy order `[Z,Y,X]` becomes `[analysis X, analysis Y, depth]`. Vox
 
 `--mc-shift-x-mm` and `--mc-shift-y-mm` translate lateral MC coordinates before ROI extraction and normalization, without resampling dose. Slit measurement maps use coordinate-midpoint centering unless explicit `slit_map_x_offset_mm`/`slit_map_y_offset_mm` values override it.
 
+Lateral comparisons include a lower MC/measurement ratio panel fixed to 0.95–1.05. It uses the same normalized MC profile as the upper panel, interpolated onto measurement coordinates without extrapolation. Nonpositive measurement values are omitted. Ratios outside the displayed range remain in `profiles.csv`; the plot limits do not change the data. Both separate-depth and combined-depth figures include this panel; MC-only figures do not.
+
 ## Methods and normalization
 
 - **PDD:** MC-only shows saved Gy. Open-field comparison independently peak-normalizes MC and AGL sampled curves; Sphinx comparison separately matches the reference-depth ROI. `--agl-ssd-correction` displays an approximate inverse-square SSD shape correction; it does not correct scatter, field size or electron contamination. No collimator PDD measurement is substituted; use `--source collimator --mc-only`.
