@@ -1,0 +1,119 @@
+# MHA analysis: X = physical X; Y = physical Z; depth = physical Y from entrance.
+# Unlisted MC inputs are deliberately unavailable; measurement-only commands still work.
+# All input paths are explicit and relative to this file.
+version = 1
+
+[defaults]
+agl_ssd_mm = 900.0
+mc_ssd_mm = 1000.0
+lateral_normalization_mode = "2d"
+output_root = "../outputs/dose_analysis"
+reference_depth_mm = 100.0
+normalization_roi_fraction = 1.0
+# Normalization reduces the selected ROI dimensions by this fraction.
+# These half-widths also control perpendicular profile averaging.
+x_roi_half_width_mm = 5
+y_roi_half_width_mm = 5
+depths_mm = [5.5, 20.0, 50.0, 100.0]
+open_monitor_units = 400.0
+slit_monitor_units = 2000.0
+ratio_threshold_percent = 1.0
+# Lateral-only translations in comparison coordinates, with fixed MHA mapping.
+# Positive values move the MC curves toward positive X/Y; override per field below.
+mc_shift_x_mm = 0.0
+mc_shift_y_mm = 0.0
+profile_axis = "x"
+pvdr_mc_axis = "y"
+# Packaged slit orientation modulates along analysis Y (physical MHA Z).
+pvdr_data_axis = "y"
+ignore_edge_peaks = true
+peak_prominence_fraction = 0.5
+# expected_ctc_mm = 9.3
+# Omit offsets for automatic coordinate-midpoint centering.
+# slit_map_x_offset_mm = 102.3
+# slit_map_y_offset_mm = 102.3
+
+[fields."2"]
+agl = "~/Local/vroc-photon-minibeam/datasets/AGL/Sorted_AGL_6MV_20mmx20mm_Open_PDDs.csv"
+open_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/2x2open_6MV_400MU_D0_only_v1/LD_open_field_2x2open_6MV_400MU_D0_only_v1_scaled_dosemap.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/2x2open_6MV_400MU_D2_only_v1/LD_open_field_2x2open_6MV_400MU_D2_only_v1_scaled_dosemap.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/2x2open_6MV_400MU_D5_only_v1/LD_open_field_2x2open_6MV_400MU_D5_only_v1_scaled_dosemap.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/2x2open_6MV_400MU_D10_only_v1/LD_open_field_2x2open_6MV_400MU_D10_only_v1_scaled_dosemap.csv", depth_mm = 100.0 },
+]
+slit_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_2x2_6MV_2000MU_D0_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_2x2_6MV_2000MU_D2_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_2x2_6MV_2000MU_D5_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_2x2_6MV_2000MU_D10_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 100.0 },
+]
+
+[fields."4"]
+agl = "~/Local/vroc-photon-minibeam/datasets/AGL/Sorted_AGL_6MV_40mmx40mm_Open_PDDs.csv"
+open_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/4X4open_6MV_400MU_D0_only_v1/LD_open_field_4X4open_6MV_400MU_D0_only_v1_scaled_dosemap.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/4X4open_6MV_400MU_D2_only_v1/LD_open_field_4X4open_6MV_400MU_D2_only_v1_scaled_dosemap.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/4X4open_6MV_400MU_D5_only_v1/LD_open_field_4X4open_6MV_400MU_D5_only_v1_scaled_dosemap.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/4x4open_6MV_400MU_D10_only_v1/LD_open_field_4x4open_6MV_400MU_D10_only_v1_scaled_dosemap.csv", depth_mm = 100.0 },
+]
+slit_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_4x4_6MV_2000MU_D0_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_4x4_6MV_2000MU_D2_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_4x4_6MV_2000MU_D5_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_4X4_6MV_2000MU_D10_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 100.0 },
+]
+
+[fields."10"]
+mc_open = "../projects/openfield-10x10/derived/dose_scoring_grid.mha"
+mc_collimator = "../projects/slits-10x10/derived/dose_scoring_grid.mha"
+agl = "~/Local/vroc-photon-minibeam/datasets/AGL/Sorted_AGL_6MV_100mmx100mm_Open_PDDs.csv"
+open_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/10X10open_6MV_400MU_D0_only_v1/LD_open_field_10X10open_6MV_400MU_D0_only_v1_scaled_dosemap.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/10X10open_6MV_400MU_D2_only_v1/LD_open_field_10X10open_6MV_400MU_D2_only_v1_scaled_dosemap.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/10X10open_6MV_400MU_D5_only_v1/LD_open_field_10X10open_6MV_400MU_D5_only_v1_scaled_dosemap.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/10x10open_6MV_400MU_D10_only_v1/LD_open_field_10x10open_6MV_400MU_D10_only_v1_scaled_dosemap.csv", depth_mm = 100.0 },
+]
+slit_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_10x10_6MV_2000MU_D0_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_10x10_6MV_2000MU_D2_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_10x10_6MV_2000MU_D5_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_10X10_6MV_2000MU_D10_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 100.0 },
+]
+
+[fields."15"]
+agl = "~/Local/vroc-photon-minibeam/datasets/AGL/Sorted_AGL_6MV_150mmx150mm_Open_PDDs.csv"
+open_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/15X15open_6MV_400MU_D0_only_v1/LD_open_field_15X15open_6MV_400MU_D0_only_v1_scaled_dosemap.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/15X15open_6MV_400MU_D2_only_v1/LD_open_field_15X15open_6MV_400MU_D2_only_v1_scaled_dosemap.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/15X15open_6MV_400MU_D5_only_v1/LD_open_field_15X15open_6MV_400MU_D5_only_v1_scaled_dosemap.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/15x15open_6MV_400MU_D10_only_v1/LD_open_field_15x15open_6MV_400MU_D10_only_v1_scaled_dosemap.csv", depth_mm = 100.0 },
+]
+slit_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_15x15_6MV_2000MU_D0_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_15x15_6MV_2000MU_D2_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_15x15_6MV_2000MU_D5_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_15X15_6MV_2000MU_D10_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 100.0 },
+]
+
+[fields."20"]
+agl = "~/Local/vroc-photon-minibeam/datasets/AGL/Sorted_AGL_6MV_200mmx200mm_Open_PDDs.csv"
+open_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/20x20open_6MV_400MU_D0_only_v1/LD_open_field_20x20open_6MV_400MU_D0_only_v1_scaled_dosemap.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/20x20open_6MV_400MU_D2_only_v1/LD_open_field_20x20open_6MV_400MU_D2_only_v1_scaled_dosemap.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/20X20open_6MV_400MU_D5_only_v1/LD_open_field_20X20open_6MV_400MU_D5_only_v1_scaled_dosemap.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_opg_outputs(SPHINX)/20x20open_6MV_400MU_D10_only_v1/LD_open_field_20x20open_6MV_400MU_D10_only_v1_scaled_dosemap.csv", depth_mm = 100.0 },
+]
+slit_maps = [
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_20x20_6MV_2000MU_D0_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 5.5 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_20x20_6MV_2000MU_D2_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 20.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_20x20_6MV_2000MU_D5_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 50.0 },
+  { file = "~/Local/vroc-photon-minibeam/datasets/LD_slits_share/Sphinx_EBTXD_20x20_6MV_2000MU_D10_only_v1/DetectorDoseMap_FilmOrientation.csv", depth_mm = 100.0 },
+]
+
+# Optional historical overlays (disabled; not universal reference data):
+# [defaults.output_factor_reference]
+# attribution = "User-provided head scatter correction at 100 mm depth"
+# values = [[1, 0.658], [2, 0.800], [3, 0.847], [4, 0.879], [5, 0.907], [7, 0.952], [10, 1.0], [15, 1.058], [20, 1.096]]
+# [defaults.point_source_pvdr_reference]
+# attribution = "User-provided historical 10 cm point-source simulation"
+# values = [[5.5, 6.89], [20, 5.28], [50, 4.54], [100, 3.98]]

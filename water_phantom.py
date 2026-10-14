@@ -25,7 +25,7 @@ SOURCE_TYPE = 'phase_space'  # 'point' uses the existing empirical spectrum
 # Requires combined execution; physical MLC/jaws/collimator define irradiation.
 # Transport scatter is included in BOTH modes. Empty histories still count in
 # HISTORIES_PER_JOB and dose normalization; this does not select N particles.
-PHASE_SPACE_SELECTION = "all_forward"
+PHASE_SPACE_SELECTION = "field" # "all_forward"
 PHASE_SPACE_FILE_BASES = [
     '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
     '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',

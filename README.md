@@ -24,7 +24,23 @@ as the patient and water workflows are evaluated.
 - [ ] Repeat dose calculation with delivable MLC parameters deduced from FMO results
 - [ ] Compare "field" with "all_forward" for the phantom simulation, patient simulation
 
+## Water phantom MC evaluation
 
+The following production projects are scheduled for various aims.
+
+### Basic modeling
+Using Elekta_Precise_6MV phase space file
+- [ ] "field" vs "all_forward": `openfield-10x10`, `openfield-10x10-inbixel`
+- [ ] verify collimator orentation (slit length along X): `slits-10x10` 
+
+### MLC & jaw position
+Using Elekta phase space + 2mm focal spot spread
+- [ ] MLC: , jaw: : 
+
+### Source fine tuning
+Basic model: Using Elekta phase space + 2mm focal spot spread
+- [ ] energy shift: -0.5MeV, + 0.5MeV
+- [ ] focal spot: 2.5mm, 1.5mm
 
 ## Repeated simulations
 
@@ -164,3 +180,14 @@ python tools/print_rtplan_info.py /path/to/RTPLAN.dcm --summary-only
 
 Only root submission scripts under `projects/` are tracked. DICOM, project outputs,
 legacy `runs/`, environments and caches are ignored.
+
+## Water dose analysis
+
+Edit `tools/dose_analysis.toml` to select saved MHA dose and measurement inputs, then run:
+
+```sh
+python tools/dose_analysis.py pdd --field 10
+python tools/dose_analysis.py lateral --field 10 --combine-depths
+```
+
+PDD, lateral profiles, field ratios, output factors, PVDR and a Markdown report are available. See the [dose analysis guide](docs/dose-analysis.md) for coordinates, configuration, commands and uncertainty limitations.
