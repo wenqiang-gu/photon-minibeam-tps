@@ -1,0 +1,40 @@
+# Paths are relative to this TOML file; ~ expands to your home directory.
+# Original distinct history batches only. The modifier processes complete files.
+file_bases = [
+  "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1",
+  "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2",
+  "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3",
+  "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4",
+]
+output_dir = "../outputs/modified_phase_space1"
+seed = 12345 # Modification seed, independent of TOPAS transport seeds.
+
+# Spectrum weights are unchanged through 0.1 MeV, transition smoothly to
+# the model ratio at 0.2 MeV, and preserve the protected 511 keV band.
+# No source spread is added unless you explicitly configure a positive sigma.
+# Each enabled variant writes a COMPLETE copy of the input particle files.
+# [variants.energy_low]
+# spectrum = "peak_minus_0p1"
+# source_sigma_x_mm = 0.0
+# source_sigma_y_mm = 0.0
+
+# [variants.energy_high]
+# spectrum = "peak_plus_0p1"
+# source_sigma_x_mm = 0.0
+# source_sigma_y_mm = 0.0
+
+[variants.focal_spread_2mm]
+spectrum = "baseline"
+source_sigma_x_mm = 2.0 # Example only; effective spread ADDED at source plane.
+source_sigma_y_mm = 2.0 # Phase-space positions remain fixed.
+
+# [variants.joint_example]
+# spectrum = "peak_plus_0p1"
+# source_sigma_x_mm = 0.5
+# source_sigma_y_mm = 0.5
+
+# [variants.custom_example]
+# spectrum = "custom"
+# C1 = 1.120813595915993
+# C2 = 4.174177344588501
+# C3 = -1.276750337246975

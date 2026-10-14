@@ -1,6 +1,7 @@
 """Streaming validation of the explicitly supported Elekta IAEA record layout."""
 from pathlib import Path
 import hashlib
+import json
 import numpy as np
 
 IAEA_DTYPE = np.dtype([('code','i1'),('energy','<f4'),('x','<f4'),('y','<f4'),
@@ -40,7 +41,27 @@ def read_header(base):
         raise ValueError('IAEA file size, record count or byte-count CHECKSUM mismatch')
     if sum(counts[k] for k in ('PHOTONS','ELECTRONS','POSITRONS'))!=counts['PARTICLES']:
         raise ValueError('IAEA species counts do not sum to particle count')
-    return {'base':base,'header':header,'data':data,'plane_distance_mm':constants[0]*10,
+    modification = None
+    if 'MINIBEAM_MODIFICATION' in sections:
+        marker = ' '.join(sections['MINIBEAM_MODIFICATION']).split()
+        if len(marker) != 2 or marker[0] != base.name+'.modification.json':
+            raise ValueError('Invalid phase-space modification provenance marker')
+        sidecar = base.parent/marker[0]
+        payload = sidecar.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != marker[1]:
+            raise ValueError('Modified source provenance hash mismatch')
+        modification = json.loads(payload)
+        if (not isinstance(modification, dict) or modification.get('schema') != 1 or modification.get('output_basename') != base.name
+                or not isinstance(modification.get('set_id'), str)
+                or type(modification.get('part_index')) is not int
+                or not isinstance(modification.get('inputs'), list)
+                or not isinstance(modification.get('output_phsp_sha256'), str)):
+            raise ValueError('Unsupported modified source provenance')
+        common = {k:v for k,v in modification.items() if k not in
+                  ('set_id', 'part_index', 'output_basename', 'output_phsp_sha256')}
+        if hashlib.sha256(json.dumps(common,sort_keys=True,allow_nan=False).encode()).hexdigest() != modification['set_id']:
+            raise ValueError('Modified source settings identity mismatch')
+    return {'modification':modification,'base':base,'header':header,'data':data,'plane_distance_mm':constants[0]*10,
             'source_description': {name: ' '.join(' '.join(sections.get(name, [])).split()) for name in (
                 'COORDINATE_SYSTEM_DESCRIPTION', 'MACHINE_TYPE', 'MONTE_CARLO_CODE_VERSION',
                 'TRANSPORT_PARAMETERS', 'GLOBAL_PHOTON_ENERGY_CUTOFF', 'GLOBAL_PARTICLE_ENERGY_CUTOFF',
@@ -87,6 +108,13 @@ def validated_chunks(info, audit, chunk_size=1_000_000):
         raise ValueError('IAEA particle/species counts disagree with header')
     if hashlib.sha256(info['header'].read_bytes()).hexdigest()!=info['header_sha256']:
         raise ValueError('IAEA header changed while reading')
+    if info.get('modification'):
+        if digest.hexdigest() != info['modification']['output_phsp_sha256']:
+            raise ValueError('Modified source particle hash mismatch')
+        # Recheck provenance at end of the stream, as for the original header.
+        if read_header(info['base'])['modification'] != info['modification']:
+            raise ValueError('Modified source provenance changed while reading')
+        audit['modification'] = info['modification']
     audit.update(file_basename=info['base'].name,record_layout='IAEA little-endian 33-byte constant-Z with history increments and LATCH',
         header_sha256=info['header_sha256'],phsp_sha256=digest.hexdigest(),
         records=total,original_histories=counts['ORIG_HISTORIES'],nonempty_histories=nonempty,
@@ -108,6 +136,13 @@ def write_topas_header(path, histories, reached, particles):
 
 def validated_parts(infos, audits):
     """Read distinct history batches in order, including unused suffix files."""
+    modifications = [i.get('modification') for i in infos]
+    if any(m is not None for m in modifications):
+        if (not all(m is not None for m in modifications)
+                or len({m['set_id'] for m in modifications}) != 1
+                or [m['part_index'] for m in modifications] != list(range(len(infos)))
+                or len(modifications[0]['inputs']) != len(infos)):
+            raise ValueError('Modified sources require the complete ordered set with matching modification settings')
     offset = 0
     hashes = set()
     for index, info in enumerate(infos):

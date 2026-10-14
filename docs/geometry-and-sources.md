@@ -233,3 +233,10 @@ classifies incident particles by projection, not by whether their dose arose fro
 scatter. Target-depth maximum-projection plots can omit dose elsewhere; use the
 full scoring-grid dose for quantitative additivity checks. No paired-difference
 uncertainty is currently supplied.
+
+## Effective source and spectrum modifications
+
+The standalone modifier creates spectrum-reweighted and effective focal-spot
+variants before source selection. See [phase-space modifications](phase-space-modifications.md)
+for configuration, illustrations, normalization and use of the generated IAEA
+files in either workflow.

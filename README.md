@@ -33,7 +33,7 @@ Using Elekta_Precise_6MV phase space file
 - [ ] contribution from particles outside field/bixels: `openfield-10x10`, `openfield-10x10-inbixel`, `openfield-10x10-outside`
 - [x] verify collimator orentation (slit length along X): `slits-10x10` 
 
-### MLC & jaw position
+### MLC/jaw: position and angle
 Using Elekta phase space + 2mm focal spot spread
 - [ ] MLC: , jaw: : 
 
@@ -41,6 +41,21 @@ Using Elekta phase space + 2mm focal spot spread
 Basic model: Using Elekta phase space + 2mm focal spot spread
 - [ ] energy shift: -0.5MeV, + 0.5MeV
 - [ ] focal spot: 2.5mm, 1.5mm
+
+## Phase-space sensitivity sources
+
+Use `tools/modify_phsp.toml` to define energy-only, effective focal-spot-width,
+or joint variants, then run:
+
+```sh
+python tools/modify_phsp.py --dry-run
+python tools/modify_phsp.py
+```
+
+This writes new reusable IAEA file pairs without altering the originals. Set
+`PHASE_SPACE_FILE_BASES` to the printed paths before preparing a fresh project.
+See [spectrum and source-width modifications](docs/phase-space-modifications.md)
+for normalization, protected 511 keV photons, illustrations and configuration.
 
 ## Repeated simulations
 
