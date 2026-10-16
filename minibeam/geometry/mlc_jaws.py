@@ -27,6 +27,24 @@ class RoundedMLCTip:
     tangent_z: float
     tangent_x: float
 
+@dataclass(frozen=True)
+class RoundedJawTip:
+    radius: float
+    circle_center_y: float
+    circle_center_z: float
+    center_z_offset: float
+    tangent_z: float
+    tangent_y: float
+
+    # Shared transverse-bank mathematics; serialized records retain Y labels.
+    @property
+    def circle_center_x(self):
+        return self.circle_center_y
+
+    @property
+    def tangent_x(self):
+        return self.tangent_y
+
 def _render_jaw_solid(
     g: Geometry,
     stage: JawStage,
@@ -99,35 +117,46 @@ d:Ge/{component}/TransY = {trans_y:.6f} mm
 d:Ge/{component}/TransZ = {stage.center_z:.6f} mm
 '''
 
-def _rounded_mlc_inner_x(g: Geometry, z: float) -> float:
-    if g.mlc is None or g.mlc_round_tip is None:
-        raise ValueError("Rounded MLC geometry is incomplete")
-    axial_offset = z - g.mlc_round_tip.circle_center_z
+def _bank_geometry(g, axis):
+    if axis == 'X':
+        return g.mlc, g.mlc_round_tip, g.field_aperture_outer_width, g.field_aperture_outer_height
+    if axis == 'Y':
+        return g.lower_jaw, g.jaw_round_tip, g.field_aperture_outer_height, g.field_aperture_outer_width
+    raise ValueError('Rounded bank axis must be X or Y')
+
+
+def _rounded_bank_inner(g: Geometry, z: float, axis: str) -> float:
+    stage, tip, outer, _ = _bank_geometry(g, axis)
+    if stage is None or tip is None:
+        raise ValueError("Rounded bank geometry is incomplete")
+    axial_offset = z - tip.circle_center_z
     radicand = (
-        g.mlc_round_tip.radius ** 2 - axial_offset ** 2
+        tip.radius ** 2 - axial_offset ** 2
     )
     if radicand < -1e-9:
-        raise ValueError("MLC rounded tip does not span the requested z position")
+        raise ValueError("Rounded bank tip does not span the requested z position")
     return (
-        g.mlc_round_tip.circle_center_x
+        tip.circle_center_x
         - math.sqrt(max(0.0, radicand))
     )
 
-def _rounded_mlc_polygon(
+def _rounded_bank_polygon(
     g: Geometry,
     positive: bool,
     arc_segments: int = 64,
+    axis: str = "X",
 ) -> tuple[tuple[float, float], ...]:
-    if g.mlc is None or g.mlc_round_tip is None:
-        raise ValueError("Rounded MLC geometry is incomplete")
-    outer_x = g.field_aperture_outer_width / 2.0
-    half_thickness = g.mlc.thickness / 2.0
+    stage, tip, outer, _ = _bank_geometry(g, axis)
+    if stage is None or tip is None:
+        raise ValueError("Rounded bank geometry is incomplete")
+    outer_x = outer / 2.0
+    half_thickness = stage.thickness / 2.0
     arc = []
     for index in range(arc_segments + 1):
         fraction = index / arc_segments
-        local_z = -half_thickness + fraction * g.mlc.thickness
-        global_z = g.mlc.center_z + local_z
-        arc.append((_rounded_mlc_inner_x(g, global_z), local_z))
+        local_z = -half_thickness + fraction * stage.thickness
+        global_z = stage.center_z + local_z
+        arc.append((_rounded_bank_inner(g, global_z, axis), local_z))
     polygon = [
         arc[0],
         (outer_x, -half_thickness),
@@ -139,36 +168,54 @@ def _rounded_mlc_polygon(
         return tuple(polygon)
     return tuple(reversed([(-x, z) for x, z in polygon]))
 
-def _render_rounded_mlc_solid(
+def _render_rounded_bank_solid(
     g: Geometry,
     positive: bool,
+    axis: str = "X",
 ) -> str:
-    if g.mlc is None or g.mlc_round_tip is None:
-        raise ValueError("Rounded MLC geometry is incomplete")
+    stage, tip, _, extrusion_width = _bank_geometry(g, axis)
+    if stage is None or tip is None:
+        raise ValueError("Rounded bank geometry is incomplete")
     sign_name = "Positive" if positive else "Negative"
-    component = f"MLC{sign_name}"
-    polygon = _rounded_mlc_polygon(g, positive)
+    label = 'MLC' if axis == 'X' else 'LowerJaw'
+    component = f"{label}{sign_name}"
+    polygon = _rounded_bank_polygon(g, positive, axis=axis)
+    # Local polygon (transverse, axial) maps to (X,Z) or (Y,Z).
+    # The latter cyclic mapping sends extrusion to beam X, without axial reversal.
+    rx, ry, rz = (-90, 0, 0) if axis == 'X' else (-90, -90, 0)
     coordinates = " ".join(
         f"{x:.6f} {z:.6f}" for x, z in polygon
     )
-    return f'''# Rounded MLC {sign_name.lower()} bank
+    return f'''# Rounded {label} {sign_name.lower()} bank
 s:Ge/{component}/Type = "G4ExtrudedSolid"
 s:Ge/{component}/Parent = "World"
 s:Ge/{component}/Material = "{g.field_aperture_material}"
 dv:Ge/{component}/Polygons = {2 * len(polygon)} {coordinates} mm
-d:Ge/{component}/HLZ = {g.field_aperture_outer_height / 2.0:.6f} mm
+d:Ge/{component}/HLZ = {extrusion_width / 2.0:.6f} mm
 dv:Ge/{component}/Off1 = 2 0 0 mm
 u:Ge/{component}/Scale1 = 1
 dv:Ge/{component}/Off2 = 2 0 0 mm
 u:Ge/{component}/Scale2 = 1
 # G4PVPlacement interprets the component rotation as a coordinate-frame
-# transform.  RotX = -90 deg maps the polygon's second coordinate to world Z
-# without swapping the upstream and downstream rounded-tip profiles.
-d:Ge/{component}/RotX = -90 deg
-d:Ge/{component}/RotY = 0 deg
-d:Ge/{component}/RotZ = 0 deg
+# transform. These angles preserve upstream/downstream ordering while mapping
+# the polygon to the bank transverse axis and beam Z.
+d:Ge/{component}/RotX = {rx} deg
+d:Ge/{component}/RotY = {ry} deg
+d:Ge/{component}/RotZ = {rz} deg
 d:Ge/{component}/TransX = 0 mm
 d:Ge/{component}/TransY = 0 mm
-d:Ge/{component}/TransZ = {g.mlc.center_z:.6f} mm
+d:Ge/{component}/TransZ = {stage.center_z:.6f} mm
 '''
 
+
+# Retain the established MLC helpers for callers and regression fixtures.
+def _rounded_mlc_inner_x(g, z):
+    return _rounded_bank_inner(g, z, 'X')
+
+
+def _rounded_mlc_polygon(g, positive, arc_segments=64):
+    return _rounded_bank_polygon(g, positive, arc_segments, 'X')
+
+
+def _render_rounded_mlc_solid(g, positive):
+    return _render_rounded_bank_solid(g, positive, 'X')

@@ -17,7 +17,7 @@ DEFAULTS = dict(reference_depth_mm=100.0, normalization_roi_fraction=0.5,
                 mc_shift_x_mm=0.0, mc_shift_y_mm=0.0,
                 ignore_edge_peaks=True, peak_prominence_fraction=0.5)
 PATH_KEYS = {"mc_open", "mc_collimator", "agl"}
-OPTIONAL = {"slit_map_x_offset_mm", "slit_map_y_offset_mm", "expected_ctc_mm",
+OPTIONAL = {"open_map_x_offset_mm", "open_map_y_offset_mm", "slit_map_x_offset_mm", "slit_map_y_offset_mm", "expected_ctc_mm",
             "output_factor_reference", "point_source_pvdr_reference"}
 
 
@@ -108,7 +108,7 @@ def validate_settings(s: dict) -> None:
         raise ValueError("ROI and peak prominence fractions must be in (0, 1]")
     if s["ratio_threshold_percent"] >= 100:
         raise ValueError("ratio_threshold_percent must be less than 100")
-    for name in ("slit_map_x_offset_mm", "slit_map_y_offset_mm"):
+    for name in ("open_map_x_offset_mm", "open_map_y_offset_mm", "slit_map_x_offset_mm", "slit_map_y_offset_mm"):
         if name in s:
             _number(s[name], name)
     if "expected_ctc_mm" in s:

@@ -44,6 +44,10 @@ class JawGeometry(FrozenGeometry):
     enabled: bool
     source_to_center_mm: float = Field(gt=0)
     thickness_mm: float = Field(gt=0)
+    # Missing fields in legacy snapshots retain the original flat jaws.
+    round_tip_enabled: bool = False
+    tip_radius_mm: float = Field(default=135.0, gt=0)
+    tip_center_z_offset_mm: float = -3.5
 
 
 class SlitGeometry(FrozenGeometry):

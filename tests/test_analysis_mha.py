@@ -243,3 +243,36 @@ values=[[5.5,4.0],[20.0,3.0]]
     assert main(['output-factor','--config',str(config)])==0
     meta=json.loads((tmp_path/'out/output-factor/open/metadata.json').read_text())
     assert not meta['results']['reference']['included'] # reference not applicable at 5 mm
+
+
+def test_open_measurement_offsets(tmp_path):
+    from tools.analysis_io import read_plane
+    file=tmp_path/'map.csv'
+    np.savetxt(file,[[0,-2,0,2],[-1,1,2,3],[1,4,5,6]],delimiter=',')
+    original=read_plane(file,5)
+    shifted=read_plane(file,5,offset_x=1.5,offset_y=-2.)
+    np.testing.assert_array_equal(shifted.x,original.x-1.5)
+    np.testing.assert_array_equal(shifted.y,original.y+2)
+    np.testing.assert_array_equal(shifted.dose,original.dose)
+    only_x=read_plane(file,5,offset_x=1.)
+    np.testing.assert_array_equal(only_x.y,original.y)
+    assert only_x.centering['y_mode']=='unchanged'
+
+
+@pytest.mark.parametrize('command',['pdd','lateral'])
+def test_open_offsets_routed_and_reported(tmp_path,capsys,command):
+    config=fixture_config(tmp_path)
+    config.write_text(config.read_text().replace('[defaults]', '[defaults]\nopen_map_x_offset_mm=0.25\nopen_map_y_offset_mm=-0.5'))
+    assert main([command,'--config',str(config)])==0
+    meta=json.loads(next((tmp_path/'out').rglob('metadata.json')).read_text())
+    assert all(e['source']=='open' and e['offset_x_mm']==.25 and e['offset_y_mm']==-.5 for e in meta['centering'])
+    assert len(meta['centering'])==3
+    assert 'open_map_x_offset_mm = 0.25' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('value',['true','nan','inf'])
+def test_invalid_open_offsets(tmp_path,value):
+    from tools.analysis_config import load_config
+    config=fixture_config(tmp_path)
+    config.write_text(config.read_text().replace('[defaults]',f'[defaults]\nopen_map_x_offset_mm={value}'))
+    with pytest.raises(ValueError,match='finite number'):load_config(config)

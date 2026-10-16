@@ -35,6 +35,10 @@ class GeometryConfig:
         if isinstance(data.get('aperture'), dict):
             data['aperture'].setdefault('lateral_shift_mm', 0.0)
             data['aperture'].setdefault('rotation_z_deg', 0.0)
+        if isinstance(data.get('jaws'), dict):
+            data['jaws'].setdefault('round_tip_enabled', False)
+            data['jaws'].setdefault('tip_radius_mm', 135.0)
+            data['jaws'].setdefault('tip_center_z_offset_mm', -3.5)
         return data
 
     @property
@@ -48,7 +52,7 @@ class GeometryConfig:
             'assembly': {'enabled'},
             'field': {'width_mm','height_mm','material','outer_width_mm','outer_height_mm','side_margin_mm'},
             'mlc': {'enabled','source_to_center_mm','thickness_mm','round_tip_enabled','tip_radius_mm','tip_center_z_offset_mm'},
-            'jaws': {'enabled','source_to_center_mm','thickness_mm'},
+            'jaws': {'enabled','source_to_center_mm','thickness_mm','round_tip_enabled','tip_radius_mm','tip_center_z_offset_mm'},
             'aperture': set(),
         }
         if set(data) != set(allowed):

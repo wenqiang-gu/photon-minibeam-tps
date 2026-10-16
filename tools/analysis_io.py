@@ -142,13 +142,13 @@ def read_plane(path: Path, depth: float, *, slit: bool = False,
     if np.isinf(values).any() or not np.isfinite(values).any():
         raise ValueError(f"invalid map doses: {path}")
     centering = {}
-    if slit:
+    if slit or offset_x is not None or offset_y is not None:
         cx, cy = float((x[0] + x[-1]) / 2), float((y[0] + y[-1]) / 2)
-        ox = cx if offset_x is None else offset_x
-        oy = cy if offset_y is None else offset_y
+        ox = (cx if slit else 0.0) if offset_x is None else offset_x
+        oy = (cy if slit else 0.0) if offset_y is None else offset_y
         centering = dict(center_x_mm=cx, center_y_mm=cy, offset_x_mm=ox, offset_y_mm=oy,
-                         x_mode="automatic" if offset_x is None else "configured",
-                         y_mode="automatic" if offset_y is None else "configured")
+                         x_mode=("automatic" if slit else "unchanged") if offset_x is None else "configured",
+                         y_mode=("automatic" if slit else "unchanged") if offset_y is None else "configured")
         x, y = x - ox, y - oy
     return Plane(x, y, values, depth, path, centering)
 

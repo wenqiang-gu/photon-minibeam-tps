@@ -28,7 +28,12 @@ pvdr_mc_axis = "y"
 pvdr_data_axis = "y"
 ignore_edge_peaks = true
 peak_prominence_fraction = 0.5
-# Omit offsets for automatic coordinate-midpoint centering.
+# Open measurement coordinates: corrected = CSV coordinate - offset (mm).
+# Positive offsets move the measured profile toward negative X/Y.
+# Omitted open offsets default to zero; also configurable per field.
+open_map_x_offset_mm = 0.0
+open_map_y_offset_mm = -1.5
+# Slit maps: omit offsets for automatic coordinate-midpoint centering.
 slit_map_x_offset_mm = 101.3
 # slit_map_y_offset_mm = 102.3
 
@@ -63,7 +68,8 @@ slit_maps = [
 ]
 
 [fields."10"]
-mc_open = "../projects/openfield-10x10/derived/dose_scoring_grid.mha"
+# Measurement comparisons use all_forward MC, never field/outside_field components.
+mc_open = "../projects/openfield-10x10-allforward/derived/dose_scoring_grid.mha"
 mc_collimator = "../projects/slits-10x10/derived/dose_scoring_grid.mha"
 agl = "~/Local/vroc-photon-minibeam/datasets/AGL/Sorted_AGL_6MV_100mmx100mm_Open_PDDs.csv"
 open_maps = [

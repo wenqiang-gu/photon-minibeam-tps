@@ -8,7 +8,7 @@ from scipy.spatial import ConvexHull
 from scipy.optimize import linprog
 from .spatial import corners, beam_basis
 from .coordinates import patient_center
-from .mlc_jaws import _rounded_mlc_polygon
+from .mlc_jaws import _rounded_bank_polygon
 
 
 def box_vertices(center, half):
@@ -39,8 +39,8 @@ def material_solids(head, beam):
         half = (g.field_aperture_outer_height if axis == 0 else g.field_aperture_outer_width)/2
         for positive in (False, True):
             sign = 1 if positive else -1
-            if axis == 0 and g.mlc_round_tip_enabled:
-                polygon = np.asarray(_rounded_mlc_polygon(g, positive)) + [0, stage.center_z]
+            if (g.mlc_round_tip if axis == 0 else g.jaw_round_tip) is not None:
+                polygon = np.asarray(_rounded_bank_polygon(g, positive, axis='XY'[axis])) + [0, stage.center_z]
             else:
                 polygon = [[sign*stage.entrance_opening/2, stage.entrance_z],
                            [sign*outer, stage.entrance_z], [sign*outer, stage.exit_z],

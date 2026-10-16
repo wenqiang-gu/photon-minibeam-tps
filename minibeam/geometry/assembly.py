@@ -3,8 +3,8 @@ from dataclasses import asdict, is_dataclass
 from types import SimpleNamespace
 import math
 import numpy as np
-from .mlc_jaws import (JawStage, RoundedMLCTip,
-                       _render_rounded_mlc_solid, _render_jaw_solid)
+from .mlc_jaws import (JawStage, RoundedMLCTip, RoundedJawTip,
+                       _render_rounded_bank_solid, _render_jaw_solid)
 from .apertures import APERTURE_TYPES
 from .spatial import beam_basis, corners, overlaps_box
 from ..topas.contracts import ParameterFragment
@@ -28,7 +28,8 @@ def resolve(config,sad):
     if not math.isfinite(sad) or sad<=0:raise ValueError('Beam SAD must be positive')
     g=SimpleNamespace(source_z=-sad,field_aperture_outer_width=field['outer_width_mm'],
         field_aperture_outer_height=field['outer_height_mm'],field_aperture_material=field['material'],
-        mlc=None,lower_jaw=None,mlc_round_tip=None,mlc_round_tip_enabled=data['mlc']['round_tip_enabled'])
+        mlc=None,lower_jaw=None,mlc_round_tip=None,mlc_round_tip_enabled=data['mlc']['round_tip_enabled'],
+        jaw_round_tip=None,jaw_round_tip_enabled=data['jaws']['round_tip_enabled'])
     envelopes=[]; texts=[]; stages=[]
     if not data['assembly']['enabled']: return g,None,[],''
     for key,axis,opening in [('mlc','X',field['width_mm']),('jaws','Y',field['height_mm'])]:
@@ -38,25 +39,26 @@ def resolve(config,sad):
         if d-t/2<=0 or d+t/2>=sad:raise ValueError(f'{key} must lie between source and isocenter')
         z=d-sad
         stage=JawStage(axis,d,z,t,z-t/2,z+t/2,opening*(d-t/2)/sad,opening*(d+t/2)/sad)
-        if key=='mlc':
-            g.mlc=stage
-            if g.mlc_round_tip_enabled:
-                radius=c['tip_radius_mm'];zc=z+c['tip_center_z_offset_mm']
-                if radius<=max(abs(stage.entrance_z-zc),abs(stage.exit_z-zc)):
-                    raise ValueError('MLC tip radius does not span thickness')
-                slope=opening/2/sad
-                xc=slope*(zc+sad)+radius*math.sqrt(1+slope*slope)
-                tangent_distance=((zc+sad)+slope*xc)/(1+slope*slope)
-                tangent_z=tangent_distance-sad
-                if not stage.entrance_z-1e-9<=tangent_z<=stage.exit_z+1e-9:
-                    raise ValueError('MLC tangent lies outside bank thickness')
-                g.mlc_round_tip=RoundedMLCTip(radius,xc,zc,c['tip_center_z_offset_mm'],tangent_z,slope*tangent_distance)
-                def inner(at):return xc-math.sqrt(max(0,radius**2-(at-zc)**2))
-                g.mlc=JawStage(axis,d,z,t,z-t/2,z+t/2,2*inner(z-t/2),2*inner(z+t/2))
-                # The largest inner face can occur at either entrance or exit.
-                if min(inner(z-t/2),inner(z+t/2),inner(min(max(zc,z-t/2),z+t/2)))<=0:
-                    raise ValueError('MLC banks overlap across the central opening')
-            stage=g.mlc
+        if c['round_tip_enabled']:
+            radius=c['tip_radius_mm'];zc=z+c['tip_center_z_offset_mm']
+            if radius<=max(abs(stage.entrance_z-zc),abs(stage.exit_z-zc)):
+                raise ValueError(f'{key} tip radius does not span thickness')
+            slope=opening/2/sad
+            xc=slope*(zc+sad)+radius*math.sqrt(1+slope*slope)
+            tangent_distance=((zc+sad)+slope*xc)/(1+slope*slope)
+            tangent_z=tangent_distance-sad
+            if not stage.entrance_z-1e-9<=tangent_z<=stage.exit_z+1e-9:
+                raise ValueError(f'{key} tangent lies outside bank thickness')
+            tip_type=RoundedMLCTip if key=='mlc' else RoundedJawTip
+            tip=tip_type(radius,xc,zc,c['tip_center_z_offset_mm'],tangent_z,slope*tangent_distance)
+            def inner(at):return xc-math.sqrt(max(0,radius**2-(at-zc)**2))
+            stage=JawStage(axis,d,z,t,z-t/2,z+t/2,2*inner(z-t/2),2*inner(z+t/2))
+            # The largest inner face can occur at either entrance or exit.
+            if min(inner(z-t/2),inner(z+t/2),inner(min(max(zc,z-t/2),z+t/2)))<=0:
+                raise ValueError(f'{key} banks overlap across the central opening')
+            if key=='mlc':g.mlc_round_tip=tip
+            else:g.jaw_round_tip=tip
+        if key=='mlc':g.mlc=stage
         else:g.lower_jaw=stage
         outer=field['outer_width_mm'] if axis=='X' else field['outer_height_mm']
         if max(stage.entrance_opening,stage.exit_opening)+2*field['side_margin_mm']>=outer:
@@ -65,7 +67,7 @@ def resolve(config,sad):
         envelopes.append({'name':key,'center':[0,0,z],
             'half_size':[field['outer_width_mm']/2,field['outer_height_mm']/2,t/2], 'rotation':np.eye(3).tolist()})
         for positive in (False,True):
-            if key=='mlc' and g.mlc_round_tip_enabled:text=_render_rounded_mlc_solid(g,positive)
+            if c['round_tip_enabled']:text=_render_rounded_bank_solid(g,positive,axis)
             else:text=_render_jaw_solid(g,stage,positive,'MLC' if key=='mlc' else 'LowerJaw',key)
             texts.append(text.replace('Parent = "World"','Parent = "TreatmentHead"'))
     aperture=None; aperture_type=None

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import tempfile
 import numpy as np
-from .mlc_jaws import _rounded_mlc_polygon
+from .mlc_jaws import _rounded_bank_polygon
 from .spatial import beam_basis, corners
 from .coordinates import patient_center
 from .apertures import APERTURE_TYPES
@@ -66,8 +66,8 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                         stage=g.mlc if axis==0 else g.lower_jaw
                         if stage:
                             for sign in [-1,1]:
-                                if axis==0 and g.mlc_round_tip_enabled:
-                                    shape=np.asarray(_rounded_mlc_polygon(g,sign>0))
+                                if (g.mlc_round_tip if axis==0 else g.jaw_round_tip) is not None:
+                                    shape=np.asarray(_rounded_bank_polygon(g,sign>0,axis='XY'[axis]))
                                     points=np.column_stack((shape[:,1]+stage.center_z,shape[:,0]))
                                 else:
                                     outer=field['outer_width_mm' if axis==0 else 'outer_height_mm']/2
@@ -103,11 +103,17 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                         tip=g.mlc_round_tip
                         lines += [f'MLC tip: radius {tip.radius:g} mm; offset {tip.center_z_offset:g} mm',
                                   f'Tangent (X,Z): ({tip.tangent_x:.3f}, {tip.tangent_z:.3f}) mm']
+                    if g.jaw_round_tip:
+                        tip=g.jaw_round_tip
+                        lines += [f'Jaw tip: radius {tip.radius:g} mm; offset {tip.center_z_offset:g} mm',
+                                  f'  Curvature center Z: {tip.circle_center_z + beam.sad:.3f} mm from source',
+                                  f'  Tangent (Y,Z): ({tip.tangent_x:.3f}, {tip.tangent_z:.3f}) mm',
+                                  'Jaws: uniform-thickness Agility approximation; no sculpted body.']
                     if ap:
                         lines += APERTURE_TYPES[head.config_for(beam).data['aperture']['type']].summary(ap)
                     lines += ['MLC is a two-bank approximation, not individual leaves.']
                 else:lines += ['Configured assembly disabled.']
-                info.text(0,1,'\n'.join(lines),va='top',fontsize=9,linespacing=1.5,family='DejaVu Sans')
+                info.text(0,1,'\n'.join(lines),va='top',fontsize=8.5,linespacing=1.35,family='DejaVu Sans')
                 pdf.savefig(fig);plt.close(fig)
                 if diagnostics is not None:
                     record = diagnostics[index-1]

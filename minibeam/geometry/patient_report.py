@@ -244,7 +244,13 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                     for key in ['mlc','jaws','aperture']:
                         cfg=head.config_for(beam).data[key]
                         lines.append(f"{key.upper()}: source-center {cfg['source_to_center_mm']:g} mm; thickness {cfg['thickness_mm']:g} mm" if cfg['enabled'] and head.config_for(beam).data['assembly']['enabled'] else f'{key.upper()}: disabled')
-                    _, aperture, _, _ = head.resolved(beam)
+                    g, aperture, _, _ = head.resolved(beam)
+                    if g.jaw_round_tip:
+                        tip=g.jaw_round_tip
+                        lines += [f'Jaw tip radius {tip.radius:g} mm; axial offset {tip.center_z_offset:g} mm',
+                                  f'Jaw curvature center: {tip.circle_center_z + beam.sad:.3f} mm from source; tangent Y/Z: {tip.tangent_y:.3f}/{tip.tangent_z:.3f} mm',
+                                  f'Jaw entrance/exit opening: {g.lower_jaw.entrance_opening:.3f}/{g.lower_jaw.exit_opening:.3f} mm',
+                                  'Uniform-thickness Agility approximation; sculpted body not modeled.']
                     if aperture:
                         pitches = aperture.entrance_slit_ctcs
                         lines.append(f"Slits: width {min(aperture.entrance_slit_widths):g} mm; nominal CTC {aperture.nominal_entrance_ctc_mm:g} mm; shift across slits {aperture.lateral_shift_mm:g} mm")

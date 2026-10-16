@@ -14,7 +14,10 @@ as the patient and water workflows are evaluated.
 - [x] Repeat TOPAS with saved source particles using distinct batch seeds; average completed batches without changing dose-column definitions.
 - [ ] Evaluate uncertainty for the dose calculation.
 
+- [ ] Simulation time & efficiency: with vs without collimator
+
 - [ ] Benchmark calculated dose (PDD, lateral, PVDR) against phantom measurements across field sizes and depths.
+- [ ] Verify more MLC patterns from Xingyu's TPS data?
 
 - [ ] Fine tune phase-space files (focal spot spread, energy) for data-MC comparison.
 
@@ -29,18 +32,19 @@ as the patient and water workflows are evaluated.
 The following production projects are scheduled for various aims.
 
 ### Basic modeling
-Using Elekta_Precise_6MV phase space file
-- [ ] contribution from particles outside field/bixels: `openfield-10x10` (replace with openfield-10x10-allforward), `openfield-10x10-inbixel`, `openfield-10x10-outside`
-- [x] verify collimator orentation (slit length along X): `slits-10x10` 
-
-### MLC/jaw: position and angle
-Using Elekta phase space + 2mm focal spot spread (distance to source: MLC 350mm, jaw 470mm)
-- [ ] baseline: 
+Using Elekta_Precise_6MV phase space file + 2mm focal spot spread (distance to source: MLC 350mm, jaw 470mm)
+- [x] contribution from particles outside field/bixels: `openfield-10x10-allforward`, `openfield-10x10-infield`, `openfield-10x10-outfield`. Conclusion: outside_field contributes ~10% of total dose.
+- [x] verify collimator orentation (slit length along X): `slits-10x10`. Conclusion: slit orientation is correct.
+- [ ] adjust Y jaw round tip: `openfield-10x10-focal-0mm`, `openfield-10x10-focal-0mmm-jaw-rndtip`.
+- [ ] verify 2x2, 4x4, 10x10, 15x15 (jaw round tip)
+- [ ] verify 2x2, 4x4, 10x10, 15x15 (jaw round tip + focal spot spread)
 
 ### Source fine tuning
 Basic model: Using Elekta phase space (baseline: 2mm focal spot spread)
-- [ ] energy peak value variation: -0.1MeV, +0.1MeV
+- [ ] verify the different penumbra with/without 2mm focal spot spread. 
+- [ ] energy peak value variation: -0.1MeV, +0.1MeV -> improve PDD?
 - [ ] focal spot: 2.5mm, 1.5mm
+- [ ] phase space plane: z position?
 
 ## Phase-space sensitivity sources
 

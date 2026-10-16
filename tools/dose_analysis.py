@@ -186,14 +186,15 @@ class Run:
             if not entries:
                 raise ValueError(f"no {source} measurement maps configured")
             planes = []
+            prefix = "slit" if source == "collimator" else "open"
             for entry in entries:
                 p = read_plane(entry["file"], entry["depth_mm"], slit=source == "collimator",
-                               offset_x=self.s.get("slit_map_x_offset_mm"), offset_y=self.s.get("slit_map_y_offset_mm"))
+                               offset_x=self.s.get(f"{prefix}_map_x_offset_mm"), offset_y=self.s.get(f"{prefix}_map_y_offset_mm"))
                 self.input(entry["file"])
                 planes.append(p)
                 if p.centering:
                     self.meta["centering"].append(dict(field_cm=self.s["field_cm"], depth_mm=p.depth,
-                                                       path=p.path, **p.centering))
+                                                       path=p.path, source=source, **p.centering))
             self.planes[source] = planes
         return self.planes[source]
 
@@ -217,10 +218,11 @@ class Run:
             # Print one copy-ready block per distinct offset pair, with depth applicability.
             grouped = {}
             for e in self.meta["centering"]:
-                grouped.setdefault((e["field_cm"], e["offset_x_mm"], e["offset_y_mm"]), []).append(e["depth_mm"])
-            for (field, ox, oy), depths in grouped.items():
+                grouped.setdefault((e["field_cm"], e["source"], e["offset_x_mm"], e["offset_y_mm"]), []).append(e["depth_mm"])
+            for (field, source, ox, oy), depths in grouped.items():
+                prefix = "slit" if source == "collimator" else "open"
                 print(f'# Add inside [fields."{field}"] (depths {", ".join(f"{d:g}" for d in depths)} mm):\n'
-                      f'slit_map_x_offset_mm = {ox:.8g}\nslit_map_y_offset_mm = {oy:.8g}')
+                      f'{prefix}_map_x_offset_mm = {ox:.8g}\n{prefix}_map_y_offset_mm = {oy:.8g}')
         print(f"Saved: {self.out}")
         print(f"Report: {write_report(self.s['output_root'])}")
 

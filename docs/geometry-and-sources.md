@@ -250,3 +250,27 @@ The standalone modifier creates spectrum-reweighted and effective focal-spot
 variants before source selection. See [phase-space modifications](phase-space-modifications.md)
 for configuration, illustrations, normalization and use of the generated IAEA
 files in either workflow.
+
+
+### Curved Y diaphragms
+
+New packaged patient and water configurations enable rounded Y-jaw tips: radius
+135 mm, thickness 77 mm, and curvature-center offset −3.5 mm from the jaw body
+midpoint (negative means upstream). The retained source-to-midpoint distance is
+470 mm, placing the curvature center at 466.5 mm. Each field-edge ray is tangent
+to the circular profile; the same 64-segment profile drives TOPAS, collision
+solids, and geometry reports. MLC geometry is unchanged.
+
+Source: Karl N. Sachse (2019), *Development and validation of an electron Monte
+Carlo model for an Elekta Synergy linear accelerator*, §3.1.1.2.3, Table 3-15,
+printed page 3-19 / [PDF page 83](https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83).
+The radius is explicitly published; the offset is derived as
+`467 − (432 + 77/2) = −3.5 mm`. The published body's midpoint is 470.5 mm;
+our retained 470 mm placement is intentionally 0.5 mm upstream.
+
+This is a uniform-thickness Agility-inspired approximation, not a complete EVO
+engineering model: the sculpted body, alloy, and outer dimensions have not been
+reconstructed from manufacturer drawings. The existing `G4_W` material remains.
+Set `[jaws].round_tip_enabled = false` for the flat focused-jaw model. Configurations
+and saved snapshots without the new keys retain flat jaws. Existing projects and
+saved-only collection are unchanged; prepare a fresh project for curved jaws.
