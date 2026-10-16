@@ -1,7 +1,7 @@
 """Immutable, validated hardware snapshots attached to native steering beams."""
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from .configuration import GeometryConfig
+from .configuration import GeometryConfig, normalize_body_dimensions
 
 
 class FrozenGeometry(BaseModel):
@@ -26,12 +26,12 @@ class FieldGeometry(FrozenGeometry):
     width_mm: float = Field(gt=0)
     height_mm: float = Field(gt=0)
     material: str
-    outer_width_mm: float = Field(gt=0)
-    outer_height_mm: float = Field(gt=0)
     side_margin_mm: float = Field(ge=0)
 
 
 class MLCGeometry(FrozenGeometry):
+    outer_width_mm: float = Field(gt=0)
+    outer_height_mm: float = Field(gt=0)
     enabled: bool
     source_to_center_mm: float = Field(gt=0)
     thickness_mm: float = Field(gt=0)
@@ -41,6 +41,8 @@ class MLCGeometry(FrozenGeometry):
 
 
 class JawGeometry(FrozenGeometry):
+    outer_width_mm: float = Field(gt=0)
+    outer_height_mm: float = Field(gt=0)
     enabled: bool
     source_to_center_mm: float = Field(gt=0)
     thickness_mm: float = Field(gt=0)
@@ -76,6 +78,11 @@ class BeamGeometry(FrozenGeometry):
     mlc: MLCGeometry
     jaws: JawGeometry
     aperture: SlitGeometry
+
+    @model_validator(mode='before')
+    @classmethod
+    def migrate_shared_dimensions(cls, data):
+        return normalize_body_dimensions(data) if isinstance(data, dict) else data
 
     @model_validator(mode='after')
     def check_configuration(self):

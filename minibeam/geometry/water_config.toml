@@ -7,11 +7,13 @@ enabled = true
 width_mm = 100.0
 height_mm = 100.0
 material = "G4_W"
-outer_width_mm = 400.0
-outer_height_mm = 400.0
 side_margin_mm = 10.0
 
 [mlc]
+# Fixed pair envelope X/Y, including opening; approximate continuous banks.
+# Motivated by leaf dimensions, not a verified manufacturer bank envelope.
+outer_width_mm = 310.0
+outer_height_mm = 160.0
 enabled = true
 # Simplified continuous X banks, not individual leaves. All distances from source.
 source_to_center_mm = 350.0
@@ -21,6 +23,10 @@ tip_radius_mm = 170.0
 tip_center_z_offset_mm = -7.5
 
 [jaws]
+# Fixed pair envelope X/Y, including opening; user-estimated rectangular body.
+# Not manufacturer dimensions; sculpted Y-shaped body is deferred.
+outer_width_mm = 230.0
+outer_height_mm = 310.0
 enabled = true
 # Agility-inspired uniform-thickness approximation, not the full sculpted EVO jaw.
 # Karl N. Sachse (2019), section 3.1.1.2.3, Table 3-15, p. 3-19 (PDF p. 83):

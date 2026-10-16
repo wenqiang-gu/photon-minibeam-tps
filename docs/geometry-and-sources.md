@@ -274,3 +274,27 @@ reconstructed from manufacturer drawings. The existing `G4_W` material remains.
 Set `[jaws].round_tip_enabled = false` for the flat focused-jaw model. Configurations
 and saved snapshots without the new keys retain flat jaws. Existing projects and
 saved-only collection are unchanged; prepare a fresh project for curved jaws.
+
+### Independent MLC and jaw body envelopes
+
+New configurations put `outer_width_mm` (beam X) and `outer_height_mm` (beam Y)
+inside `[mlc]` and `[jaws]`, rather than `[field]`. Packaged defaults are
+310 × 160 mm for the MLC and 230 × 310 mm for the jaws. Each is the **full
+pair envelope including its central opening**, not the dimensions of one bank.
+These are approximate continuous-bank bodies: the MLC envelope is motivated by
+leaf dimensions; the jaw envelope is user-estimated, not a manufacturer drawing.
+Individual leaves, tapered leaf widths and the sculpted Y-shaped diaphragm are
+not represented.
+
+The outer edges remain fixed while the inner faces change with the projected
+field opening. This is not rigid translation of fixed-length leaves. Thickness,
+axial placement, tip radius and curvature offset remain independently configured.
+`[field].width_mm` and `height_mm` still specify the opening at the reference
+plane; its shared material and travel-axis side margin remain unchanged.
+
+Legacy shared outer dimensions are accepted and assigned to both devices in
+memory. Do not mix legacy shared dimensions with device-specific dimensions.
+Existing saved projects and their hashes remain unchanged; use a fresh project
+when preparing the new geometry. A smaller body can expose paths previously
+blocked by the approximation, so compare transport results before adopting it
+as a model of the measured machine.

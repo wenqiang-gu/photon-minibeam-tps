@@ -70,7 +70,7 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                                     shape=np.asarray(_rounded_bank_polygon(g,sign>0,axis='XY'[axis]))
                                     points=np.column_stack((shape[:,1]+stage.center_z,shape[:,0]))
                                 else:
-                                    outer=field['outer_width_mm' if axis==0 else 'outer_height_mm']/2
+                                    outer=(g.mlc_outer_width if axis==0 else g.jaw_outer_height)/2
                                     points=np.array([[stage.entrance_z,sign*stage.entrance_opening/2],
                                         [stage.entrance_z,sign*outer],[stage.exit_z,sign*outer],
                                         [stage.exit_z,sign*stage.exit_opening/2]])
@@ -97,7 +97,9 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                     lines += [f"Field at isocenter: {f['width_mm']:g} x {f['height_mm']:g} mm",
                               f"Field material: {f['material']}"]
                     for title,stage in [('MLC',g.mlc),('Jaws',g.lower_jaw)]:
-                        if stage:lines += [f'{title}: source-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
+                        if stage:
+                            cfg=d['mlc' if title=='MLC' else 'jaws']
+                            lines += [f"{title} pair envelope X/Y: {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm", f'{title}: source-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
                             f'  Entrance / exit opening: {stage.entrance_opening:.3f} / {stage.exit_opening:.3f} mm']
                     if g.mlc_round_tip:
                         tip=g.mlc_round_tip

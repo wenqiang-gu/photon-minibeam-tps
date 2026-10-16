@@ -8,6 +8,26 @@ import tomllib
 import math
 import json
 
+def normalize_body_dimensions(data):
+    """Normalize legacy shared envelopes without mutating saved snapshots."""
+    from copy import deepcopy
+    data = deepcopy(data)
+    field = data.get('field', {})
+    keys = ('outer_width_mm', 'outer_height_mm')
+    if not isinstance(field, dict):
+        raise ValueError('Geometry field must be a table')
+    if set(keys) & field.keys():
+        if any(not isinstance(data.get(k), dict) for k in ('mlc', 'jaws')):
+            raise ValueError('Legacy dimensions require mlc and jaws tables')
+        if not set(keys) <= field.keys() or any(set(keys) & data[k].keys() for k in ('mlc', 'jaws')):
+            raise ValueError('Mixed or incomplete body dimensions: remove shared field.outer_* and specify both dimensions in mlc and jaws, or use only the legacy shared pair')
+        for section in ('mlc', 'jaws'):
+            data[section].update({key: field[key] for key in keys})
+        for key in keys:
+            del field[key]
+    return data
+
+
 @dataclass(frozen=True)
 class GeometryConfig:
     text: str
@@ -39,7 +59,7 @@ class GeometryConfig:
             data['jaws'].setdefault('round_tip_enabled', False)
             data['jaws'].setdefault('tip_radius_mm', 135.0)
             data['jaws'].setdefault('tip_center_z_offset_mm', -3.5)
-        return data
+        return normalize_body_dimensions(data)
 
     @property
     def sha256(self):
@@ -50,9 +70,9 @@ class GeometryConfig:
         data = self.data
         allowed = {
             'assembly': {'enabled'},
-            'field': {'width_mm','height_mm','material','outer_width_mm','outer_height_mm','side_margin_mm'},
-            'mlc': {'enabled','source_to_center_mm','thickness_mm','round_tip_enabled','tip_radius_mm','tip_center_z_offset_mm'},
-            'jaws': {'enabled','source_to_center_mm','thickness_mm','round_tip_enabled','tip_radius_mm','tip_center_z_offset_mm'},
+            'field': {'width_mm','height_mm','material','side_margin_mm'},
+            'mlc': {'enabled','source_to_center_mm','thickness_mm','outer_width_mm','outer_height_mm','round_tip_enabled','tip_radius_mm','tip_center_z_offset_mm'},
+            'jaws': {'enabled','source_to_center_mm','thickness_mm','outer_width_mm','outer_height_mm','round_tip_enabled','tip_radius_mm','tip_center_z_offset_mm'},
             'aperture': set(),
         }
         if set(data) != set(allowed):

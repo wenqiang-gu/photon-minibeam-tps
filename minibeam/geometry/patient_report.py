@@ -243,7 +243,13 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                 if head:
                     for key in ['mlc','jaws','aperture']:
                         cfg=head.config_for(beam).data[key]
-                        lines.append(f"{key.upper()}: source-center {cfg['source_to_center_mm']:g} mm; thickness {cfg['thickness_mm']:g} mm" if cfg['enabled'] and head.config_for(beam).data['assembly']['enabled'] else f'{key.upper()}: disabled')
+                        if cfg['enabled'] and head.config_for(beam).data['assembly']['enabled']:
+                            label=f"{key.upper()}: source-center {cfg['source_to_center_mm']:g} mm; thickness {cfg['thickness_mm']:g} mm"
+                            if key in ('mlc', 'jaws'):
+                                label += f"; envelope X/Y {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm"
+                            lines.append(label)
+                        else:
+                            lines.append(f'{key.upper()}: disabled')
                     g, aperture, _, _ = head.resolved(beam)
                     if g.jaw_round_tip:
                         tip=g.jaw_round_tip

@@ -41,7 +41,7 @@ PHASE_SPACE_FILE_BASES = [
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.
-HISTORIES_PER_JOB = 100 # 680_000_000
+HISTORIES_PER_JOB = 680_000_000
 # Total batches initially prepared; add_batches.sh can append more later.
 # Reuses saved source particles; only TOPAS transport seeds change.
 NUMBER_OF_BATCHES = 20

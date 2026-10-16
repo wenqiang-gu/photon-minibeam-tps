@@ -26,8 +26,10 @@ def serializable(value):
 def resolve(config,sad):
     data=config.data; field=data['field']
     if not math.isfinite(sad) or sad<=0:raise ValueError('Beam SAD must be positive')
-    g=SimpleNamespace(source_z=-sad,field_aperture_outer_width=field['outer_width_mm'],
-        field_aperture_outer_height=field['outer_height_mm'],field_aperture_material=field['material'],
+    g=SimpleNamespace(source_z=-sad,mlc_outer_width=data['mlc']['outer_width_mm'],
+        mlc_outer_height=data['mlc']['outer_height_mm'],
+        jaw_outer_width=data['jaws']['outer_width_mm'],
+        jaw_outer_height=data['jaws']['outer_height_mm'],field_aperture_material=field['material'],
         mlc=None,lower_jaw=None,mlc_round_tip=None,mlc_round_tip_enabled=data['mlc']['round_tip_enabled'],
         jaw_round_tip=None,jaw_round_tip_enabled=data['jaws']['round_tip_enabled'])
     envelopes=[]; texts=[]; stages=[]
@@ -60,12 +62,12 @@ def resolve(config,sad):
             else:g.jaw_round_tip=tip
         if key=='mlc':g.mlc=stage
         else:g.lower_jaw=stage
-        outer=field['outer_width_mm'] if axis=='X' else field['outer_height_mm']
+        outer=c['outer_width_mm'] if axis=='X' else c['outer_height_mm']
         if max(stage.entrance_opening,stage.exit_opening)+2*field['side_margin_mm']>=outer:
             raise ValueError(f'{key} opening exceeds outer dimensions/side margin')
         stages.append((key,stage.entrance_z,stage.exit_z))
         envelopes.append({'name':key,'center':[0,0,z],
-            'half_size':[field['outer_width_mm']/2,field['outer_height_mm']/2,t/2], 'rotation':np.eye(3).tolist()})
+            'half_size':[c['outer_width_mm']/2,c['outer_height_mm']/2,t/2], 'rotation':np.eye(3).tolist()})
         for positive in (False,True):
             if c['round_tip_enabled']:text=_render_rounded_bank_solid(g,positive,axis)
             else:text=_render_jaw_solid(g,stage,positive,'MLC' if key=='mlc' else 'LowerJaw',key)

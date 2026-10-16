@@ -58,14 +58,14 @@ def _render_jaw_solid(
     opening_half_entrance = stage.entrance_opening / 2.0
     opening_half_exit = stage.exit_opening / 2.0
     if axis == "X":
-        outer_half = g.field_aperture_outer_width / 2.0
+        outer_half = g.mlc_outer_width / 2.0
         entrance_half_length = (outer_half - opening_half_entrance) / 2.0
         exit_half_length = (outer_half - opening_half_exit) / 2.0
         entrance_center = (outer_half + opening_half_entrance) / 2.0
         exit_center = (outer_half + opening_half_exit) / 2.0
         trans_x = (entrance_center + exit_center) / 2.0
         trans_y = 0.0
-        hly1 = g.field_aperture_outer_height / 2.0
+        hly1 = g.mlc_outer_height / 2.0
         hly2 = hly1
         hlx1 = entrance_half_length
         hlx2 = entrance_half_length
@@ -73,7 +73,7 @@ def _render_jaw_solid(
         hlx4 = exit_half_length
         phi = 0.0 if positive else 180.0
     else:
-        outer_half = g.field_aperture_outer_height / 2.0
+        outer_half = g.jaw_outer_height / 2.0
         entrance_half_length = (outer_half - opening_half_entrance) / 2.0
         exit_half_length = (outer_half - opening_half_exit) / 2.0
         entrance_center = (outer_half + opening_half_entrance) / 2.0
@@ -82,7 +82,7 @@ def _render_jaw_solid(
         trans_y = (entrance_center + exit_center) / 2.0
         hly1 = entrance_half_length
         hly2 = exit_half_length
-        hlx1 = g.field_aperture_outer_width / 2.0
+        hlx1 = g.jaw_outer_width / 2.0
         hlx2 = hlx1
         hlx3 = hlx1
         hlx4 = hlx1
@@ -119,9 +119,9 @@ d:Ge/{component}/TransZ = {stage.center_z:.6f} mm
 
 def _bank_geometry(g, axis):
     if axis == 'X':
-        return g.mlc, g.mlc_round_tip, g.field_aperture_outer_width, g.field_aperture_outer_height
+        return g.mlc, g.mlc_round_tip, g.mlc_outer_width, g.mlc_outer_height
     if axis == 'Y':
-        return g.lower_jaw, g.jaw_round_tip, g.field_aperture_outer_height, g.field_aperture_outer_width
+        return g.lower_jaw, g.jaw_round_tip, g.jaw_outer_height, g.jaw_outer_width
     raise ValueError('Rounded bank axis must be X or Y')
 
 

@@ -35,8 +35,8 @@ def material_solids(head, beam):
     for axis, stage, name in [(0, g.mlc, 'MLC'), (1, g.lower_jaw, 'LowerJaw')]:
         if stage is None:
             continue
-        outer = (g.field_aperture_outer_width if axis == 0 else g.field_aperture_outer_height)/2
-        half = (g.field_aperture_outer_height if axis == 0 else g.field_aperture_outer_width)/2
+        outer = (g.mlc_outer_width if axis == 0 else g.jaw_outer_height)/2
+        half = (g.mlc_outer_height if axis == 0 else g.jaw_outer_width)/2
         for positive in (False, True):
             sign = 1 if positive else -1
             if (g.mlc_round_tip if axis == 0 else g.jaw_round_tip) is not None:

@@ -37,7 +37,7 @@ def test_field_tangency(width,sad):
 def test_writer_matches_collision_vertices(case,positive):
     head=TreatmentHead(GeometryConfig.load());g,*_=head.resolved(case[3].beams[1])
     polygon=np.asarray(_rounded_bank_polygon(g,positive,axis='Y'))
-    local=np.concatenate([np.column_stack((polygon,np.full(len(polygon),z))) for z in (-200,200)])
+    local=np.concatenate([np.column_stack((polygon,np.full(len(polygon),z))) for z in (-g.jaw_outer_width/2,g.jaw_outer_width/2)])
     world=local@placement_rotation(-90,-90,0).T+[0,0,g.lower_jaw.center_z]
     name='LowerJaw'+('Positive' if positive else 'Negative')
     actual=dict(material_solids(head,case[3].beams[1]))[name]

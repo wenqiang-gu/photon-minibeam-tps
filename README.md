@@ -5,6 +5,9 @@ Prepare portable simulation inputs, run TOPAS externally, then collect sparse na
 `Dij` matrices or reconstruct weighted forward dose. No optimizer or MU calibration
 is implemented.
 
+## Aims
+MC acceleration
+MC tuning for realistic TPS dev
 
 ## Planned development
 
@@ -14,10 +17,10 @@ as the patient and water workflows are evaluated.
 - [x] Repeat TOPAS with saved source particles using distinct batch seeds; average completed batches without changing dose-column definitions.
 - [ ] Evaluate uncertainty for the dose calculation.
 
-- [ ] Simulation time & efficiency: with vs without collimator
+- [ ] Simulation time & efficiency: with vs without collimator => benchmark the simulation bottleneck (MLC/jaw? collimator? phantom?)
 
 - [ ] Benchmark calculated dose (PDD, lateral, PVDR) against phantom measurements across field sizes and depths.
-- [ ] Verify more MLC patterns from Xingyu's TPS data?
+- [ ] Verify more MLC patterns from TPS or measurement? (Xingyu); C-shape, L-shape, triangle (Steve DOI:10.1118/1.1333747)
 
 - [ ] Fine tune phase-space files (focal spot spread, energy) for data-MC comparison.
 
