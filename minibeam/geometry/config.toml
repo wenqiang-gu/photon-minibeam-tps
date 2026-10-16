@@ -28,6 +28,11 @@ tip_center_z_offset_mm = -7.5
 outer_width_mm = 230.0
 outer_height_mm = 310.0
 enabled = true
+# Sculpted diaphragm reference: Elekta, "Collimation apparatus for radiotherapy",
+# US20100166150A1, Figures 5-7 (Y-shaped body and its shielding relationship to MLC leaves):
+# https://patents.google.com/patent/US20100166150A1/en
+# The current rectangular, uniform-thickness jaw does not implement that sculpting.
+# The patent is not the source of our estimated 230 x 310 mm pair envelope.
 # Agility-inspired uniform-thickness approximation, not the full sculpted EVO jaw.
 # Karl N. Sachse (2019), section 3.1.1.2.3, Table 3-15, p. 3-19 (PDF p. 83):
 # https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83
