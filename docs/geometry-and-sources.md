@@ -33,10 +33,19 @@ The water script uses registered `photonSquareField`, derived from native photon
 IMRT steering. Only ray-position selection is replaced inside `generate_stf()`;
 native transformations and ray construction remain intact.
 
-Field width and height in the water TOML must agree, and width must be an integer
-multiple of `BIXEL_WIDTH_MM`. The square is tiled exactly at the entrance plane.
+`FIELD_SIZE_MM` in `water_phantom.py` sets both square-field dimensions at the
+water entrance, overriding the selected TOML width/height in the resolved snapshot
+without editing that file. It must be positive, finite, and an integer multiple of
+`BIXEL_WIDTH_MM`. The square is tiled exactly at the entrance plane.
 100 mm / 5 mm gives 20 × 20 centers from −47.5 through +47.5 mm. The whole-water
 ROI does not select rays.
+
+This setting controls both steering and MLC/jaw openings. It does not resize
+hardware bodies, slit geometry, the phantom or scoring voxels; existing containment
+checks remain enabled. `field` and `outside_field` source selection use this square;
+`all_forward` remains unrestricted while hardware openings change. Prepare a fresh
+project after changing field size. Existing package callers can leave
+`WaterSettings.field_size_mm=None` to retain equal TOML width/height.
 
 Water extends from Y=0 to Y=`PHANTOM_SIZE_MM`, centered about X=Z=0, with native
 voxel-center origins chosen to preserve these boundaries. At gantry/couch zero the

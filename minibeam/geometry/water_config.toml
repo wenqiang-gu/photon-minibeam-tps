@@ -40,7 +40,7 @@ enabled = true
 # Preserve our 470 mm midpoint: curvature center is 466.5 mm, not published 467 mm.
 # Material and outer dimensions remain our existing approximations.
 source_to_center_mm = 470.0
-thickness_mm = 77.0
+thickness_mm = 40.0 # 77.0
 round_tip_enabled = true
 tip_radius_mm = 135.0
 tip_center_z_offset_mm = -3.5

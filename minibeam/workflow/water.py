@@ -36,6 +36,8 @@ class WaterSettings:
     phase_space_selection: str = "field"
     number_of_batches: int = 1
     random_seed: int = 12345
+    # None preserves TOML field dimensions for existing package callers.
+    field_size_mm: float | None = None
 
 
 # SHARED PLANNING HELPERS
@@ -68,6 +70,9 @@ def build_planning(settings, project_dir):
         raise ValueError('Water preparation requires a single project, not an existing study directory')
     config = settings.geometry_config or files('minibeam.geometry').joinpath('water_config.toml')
     geometry = resolve_geometry(config_path=config, enable_collimator=settings.enable_collimator)
+    if settings.field_size_mm is not None:
+        size = positive_number('FIELD_SIZE_MM', settings.field_size_mm)
+        geometry = geometry.replace(field={'width_mm': size, 'height_mm': size})
     width = geometry.field.width_mm
     if not np.isclose(width, geometry.field.height_mm, rtol=0, atol=1e-9):
         raise ValueError('Water workflow requires equal field width and height')

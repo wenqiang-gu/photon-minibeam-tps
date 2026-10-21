@@ -13,6 +13,10 @@ from minibeam.workflow.cli import parse_stage_arguments, dispatch
 PHANTOM_SIZE_MM = 200.0
 PHANTOM_SPACING_MM = 2.0
 SSD_MM = 1000.0
+# Square field side length at the water entrance surface (at SSD_MM).
+# Controls native bixel coverage and MLC/jaw openings.
+# Must be an integer multiple of BIXEL_WIDTH_MM.
+FIELD_SIZE_MM = 100.0
 BIXEL_WIDTH_MM = 5.0
 # One perpendicular beam, with planning isocenter at the entrance center.
 # Combined mode simulates the entire tiled field in ONE job.
@@ -49,7 +53,7 @@ RANDOM_SEED = 12345
 TOPAS_THREADS_PER_JOB = 8
 
 # None selects the independent packaged water_config.toml.
-# Its field.width_mm/height_mm define the square field AT THE WATER SURFACE.
+# FIELD_SIZE_MM overrides its field.width_mm/height_mm without editing the TOML.
 GEOMETRY_CONFIG = None
 ENABLE_COLLIMATOR = False  # MLC/jaws retain their TOML settings
 DOSE_SPACING_MM = None  # native spacing; optionally (dx, dy, dz) in mm
@@ -64,6 +68,7 @@ def planning_settings():
         phantom_size_mm=PHANTOM_SIZE_MM,
         phantom_spacing_mm=PHANTOM_SPACING_MM,
         ssd_mm=SSD_MM,
+        field_size_mm=FIELD_SIZE_MM,
         bixel_width_mm=BIXEL_WIDTH_MM,
         source_type=SOURCE_TYPE,
         phase_space_file_bases=PHASE_SPACE_FILE_BASES,

@@ -171,3 +171,51 @@ def test_tiled_phase_union_matches_direct_square(monkeypatch,tmp_path):
     assert source['empty_histories']==599
     assert source['selected_species_counts']==dict(photons=400,electrons=1,positrons=1)
     assert sum(source['particles_per_member_bixel'])==402
+
+
+@pytest.mark.parametrize('size,count', [(100.,400),(200.,1600)])
+def test_top_level_square_field(monkeypatch,tmp_path,size,count):
+    small_water(monkeypatch)
+    monkeypatch.setattr(water,'FIELD_SIZE_MM',size)
+    settings=water.planning_settings()
+    assert settings.field_size_mm==size
+    _,_,_,plan,stf,meta=water.water.build_planning(settings,tmp_path/'field')
+    assert stf.total_number_of_bixels==count
+    assert plan.prop_dose_calc['beamlet_execution']=='combined'
+    assert plan.prop_stf['field_width_mm']==size
+    beam=stf.beams[0]
+    assert beam.geometry.field.width_mm==beam.geometry.field.height_mm==size
+    assert meta['water_measurement']['field_width_mm']==size
+    positions=np.array([r.ray_pos_bev for r in beam.rays])
+    np.testing.assert_allclose(np.max(np.abs(positions[:,[0,2]]),axis=0),[size/2-2.5]*2)
+
+
+@pytest.mark.parametrize('size',[True,False,0.,-5.,float('nan'),float('inf'),'100'])
+def test_invalid_field_size(monkeypatch,tmp_path,size):
+    small_water(monkeypatch)
+    monkeypatch.setattr(water,'FIELD_SIZE_MM',size)
+    with pytest.raises(ValueError,match='FIELD_SIZE_MM'):
+        water.water.build_planning(water.planning_settings(),tmp_path)
+
+
+def test_field_override_and_legacy_default(monkeypatch,tmp_path):
+    from dataclasses import replace
+    small_water(monkeypatch)
+    original=files('minibeam.geometry').joinpath('water_config.toml').read_text()
+    config=tmp_path/'custom.toml'
+    config.write_text(original.replace('width_mm = 100.0','width_mm = 80.0').replace('height_mm = 100.0','height_mm = 60.0'))
+    monkeypatch.setattr(water,'GEOMETRY_CONFIG',str(config))
+    monkeypatch.setattr(water,'FIELD_SIZE_MM',100.)
+    _,_,_,_,stf,_=water.water.build_planning(water.planning_settings(),tmp_path/'override')
+    assert stf.beams[0].geometry.field.width_mm==stf.beams[0].geometry.field.height_mm==100.
+    assert 'height_mm = 60.0' in config.read_text()
+    config.write_text(config.read_text().replace('height_mm = 60.0','height_mm = 80.0'))
+    legacy=replace(water.planning_settings(),field_size_mm=None)
+    _,_,_,_,stf,_=water.water.build_planning(legacy,tmp_path/'legacy')
+    assert stf.total_number_of_bixels==256
+    default=replace(water.planning_settings(),geometry_config=None)
+    a=water.water.build_planning(default,tmp_path/'a')[4]
+    b=water.water.build_planning(replace(default,field_size_mm=None),tmp_path/'b')[4]
+    assert a.beams[0].geometry==b.beams[0].geometry
+    with pytest.raises(ValueError,match='integer'):
+        water.water.build_planning(replace(default,field_size_mm=101.),tmp_path/'bad')

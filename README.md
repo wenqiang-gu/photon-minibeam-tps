@@ -8,6 +8,7 @@ is implemented.
 ## Aims
 MC acceleration
 MC tuning for realistic TPS dev
+- [ ] implement Y-shaped jaw/diaphragm or an effective geometry: `openfield-10x10-focal-0mm-jaw-40mm` (change 77mm thickness to 40mm)
 
 ## Planned development
 
@@ -126,8 +127,10 @@ settings and original DICOM/phase-space files.
 
 ## Water workflow
 
-Edit `water_phantom.py`; hardware settings are independently configured in
-`minibeam/geometry/water_config.toml`.
+Edit `FIELD_SIZE_MM` in `water_phantom.py` to set the square field at the water
+entrance (default 100 mm). It controls steering and MLC/jaw openings and must be an
+integer multiple of `BIXEL_WIDTH_MM`. Other hardware settings remain in
+`minibeam/geometry/water_config.toml`. Field-size changes require a fresh project.
 
 ```sh
 python water_phantom.py inspect
