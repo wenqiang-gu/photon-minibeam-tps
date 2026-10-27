@@ -65,3 +65,30 @@ Metadata records explicit inputs, coordinate mapping, normalization, exposure, s
 MHA alone supplies no MC uncertainty, and voxel covariance needed for ROI-averaged uncertainty is unavailable. No MC uncertainty bands are invented. Measurement bands show **spatial spread within the ROI**, not measurement uncertainty. PVDR bands/error bars show **retained-feature variation**, not Monte Carlo or measurement uncertainty. Repeated transport batches share their replay sample; their statistical variation does not represent independent accelerator phase-space sampling.
 
 Open-field measurement maps support `open_map_x_offset_mm` and `open_map_y_offset_mm` in `[defaults]` or a field section. Corrected coordinates are CSV coordinates **minus** these offsets, so a positive offset moves the profile toward negative coordinates. Omitted open offsets mean zero (no automatic centering). The offsets apply before ROI extraction and normalization in all commands using open measurement maps, including PDD and lateral profiles. They do not change AGL depth coordinates, MC coordinates, or stored dose values. Slit offsets remain independent. Applied offsets are recorded in metadata and printed with the appropriate setting names.
+
+### Gamma instead of the lateral ratio panel
+
+```sh
+python tools/dose_analysis.py lateral --field 10 --bottom-panel gamma
+```
+
+This replaces the lower MC/measurement ratio panel with **1D global gamma,
+2%/2 mm**, using measurement as reference and the already normalized/shifted MC
+as evaluation. The 2% tolerance is relative to each measured profile's maximum,
+not the local dose. No additional fit is performed. A line marks gamma=1;
+values ≤1 pass. The legend reports the pass rate for each axis/depth.
+
+The default cutoff is 10% of the reference profile maximum. Use
+`--gamma-cutoff-percent 0` to include low-dose tails. Only reference coordinates
+within MC coverage are evaluated; excluded points are NaN in `profiles.csv` and
+are not counted in the pass rate. Metadata records criteria, normalization dose,
+cutoff and evaluated/passing counts. Gamma is minimized exactly over the
+piecewise-linear MC profile, without extrapolation or an artificial gamma cap.
+This also supports `--combine-depths`; it requires measurements, so cannot be
+used with `--mc-only`. The default `--bottom-panel ratio` retains existing plots.
+
+This is gamma of ROI-averaged **1D profiles**, not 2D-map or 3D-volume gamma.
+Interpolation does not recover information missing from coarse MC bins. The
+chosen cutoff can exclude minibeam valleys; inspect tails/PVDR separately, and
+retain statistical and measurement-resolution limitations when interpreting
+pass rates. Definition: [Low et al. (1998)](https://doi.org/10.1118/1.598248).

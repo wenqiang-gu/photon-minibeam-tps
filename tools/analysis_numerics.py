@@ -285,3 +285,38 @@ def pvdr(curve: Curve, *, ignore_edge_peaks: bool = True, prominence_fraction: f
                     summary["mean_peak_se"] / mp, summary["mean_valley_se"] / mv))
                 summary["uncertainty_failure_reason"] = None
     return summary, features
+
+
+def gamma_profile(evaluation: Curve, reference: Curve, cutoff_percent=10.):
+    """1D global 2%/2mm gamma, exact minimum over linear MC segments.
+
+    Measurement is the reference. Search only measured MC support, without
+    extrapolation. Work one reference point at a time to bound memory.
+    """
+    if not np.isfinite(cutoff_percent) or not 0 <= cutoff_percent < 100:
+        raise ValueError('gamma cutoff must be finite and in [0, 100)')
+    for curve in (evaluation, reference):
+        if (curve.x.ndim != 1 or curve.value.shape != curve.x.shape or len(curve.x)<2
+            or not np.isfinite(curve.x).all() or not np.isfinite(curve.value).all()
+            or np.any(np.diff(curve.x)<=0) or np.any(curve.value<0)):
+            raise ValueError('Gamma requires finite nonnegative profiles with increasing coordinates')
+    maximum=float(np.max(reference.value))
+    if maximum<=0: raise ValueError('Gamma reference maximum must be positive')
+    delta=.02*maximum
+    valid=(reference.x>=evaluation.x[0])&(reference.x<=evaluation.x[-1])&(reference.value>=maximum*cutoff_percent/100)
+    values=np.full(len(reference.x),np.nan)
+    # Projection onto each line segment in normalized distance-dose space.
+    dx=np.diff(evaluation.x)/2.;dd=np.diff(evaluation.value)/delta
+    norm=dx*dx+dd*dd
+    for i in np.flatnonzero(valid):
+        x=(evaluation.x[:-1]-reference.x[i])/2.
+        d=(evaluation.value[:-1]-reference.value[i])/delta
+        t=np.clip(-(x*dx+d*dd)/norm,0,1)
+        values[i]=np.sqrt(np.min((x+t*dx)**2+(d+t*dd)**2))
+    count=int(valid.sum());passed=int(np.count_nonzero(values[valid]<=1.+1e-12))
+    return Curve(reference.x.copy(),values),dict(
+        criteria='1D global 2%/2mm',reference='measurement',evaluation='normalized MC',
+        normalization_dose=maximum,dose_tolerance=delta,distance_tolerance_mm=2.,
+        cutoff_percent=float(cutoff_percent),evaluated_points=count,passed_points=passed,
+        excluded_points=int(len(valid)-count),pass_rate_percent=100*passed/count if count else None,
+        interpolation='Exact minimum over piecewise-linear MC segments; no extrapolation')

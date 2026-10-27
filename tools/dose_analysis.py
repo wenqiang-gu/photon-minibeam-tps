@@ -25,7 +25,7 @@ from tools.analysis_config import DEFAULT_CONFIG, field_settings, load_config, v
 from tools.analysis_io import read_agl, read_grid, read_plane
 from tools.analysis_report import write_report
 from tools.analysis_numerics import (Curve, data_profile, mc_pdd, mc_profile, normalization,
-                       plane_mean, profile_normalization, pvdr, ratio, reference_value, ssd_shape_factor, peak_normalize)
+                       plane_mean, profile_normalization, pvdr, ratio, gamma_profile, reference_value, ssd_shape_factor, peak_normalize)
 
 
 COMMANDS = {
@@ -66,6 +66,10 @@ def parser() -> argparse.ArgumentParser:
             p.add_argument("--agl-ssd-correction", action="store_true",
                            help="show the approximate SSD-corrected AGL curve and ratio (hidden by default)")
         if name == "lateral":
+            p.add_argument("--bottom-panel", choices=("ratio", "gamma"), default="ratio",
+                           help="ratio (default) or 1D global gamma 2%%/2mm")
+            p.add_argument("--gamma-cutoff-percent", type=float, default=10.,
+                           help="reference-dose cutoff for gamma; default 10%% of profile maximum")
             p.add_argument("--combine-depths", action="store_true", help="overlay depths in one lateral figure")
             p.add_argument("--normalization-mode", choices=("2d", "x", "y"))
             p.add_argument("--axis", choices=("x", "y", "both"), default="both")
@@ -346,6 +350,11 @@ def run_pdd(run: Run):
 
 def run_lateral(run: Run):
     a, s = run.args, run.s
+    if a.bottom_panel == "gamma" and a.mc_only:
+        raise ValueError("Gamma requires measurement; remove --mc-only")
+    if not np.isfinite(a.gamma_cutoff_percent) or not 0 <= a.gamma_cutoff_percent < 100:
+        raise ValueError("gamma cutoff must be finite and in [0, 100)")
+    gamma_records = []
     unshifted_grid = run.grid(a.source)
     sx, sy = s["mc_shift_x_mm"], s["mc_shift_y_mm"]
     grid = unshifted_grid.shift_xy(sx, sy)
@@ -416,17 +425,31 @@ def run_lateral(run: Run):
                                    original_axis=axis, actual_mc_depth_mm=None, raw_scale=1.0, unit=unit)
                 # Compare the already normalized MC to measurement; do not fit again.
                 # Interpolate only inside MC coverage and omit nonpositive denominators.
-                relative = ratio(mc, measured, 0)
                 ratio_ax = axes[1, column]
-                draw(ratio_ax, relative, f"MC / measurement{suffix}", color=color)
+                if a.bottom_panel == "gamma":
+                    relative, info = gamma_profile(mc, measured, a.gamma_cutoff_percent)
+                    info.update(depth_mm=depth, actual_mc_depth_mm=actual, axis=axis)
+                    gamma_records.append(info)
+                    rate = info['pass_rate_percent']
+                    rate_label = f"{rate:.1f}% pass" if rate is not None else "no eligible points"
+                    draw(ratio_ax, relative, f"{depth:g} mm: {rate_label}", color=color)
+                    ratio_ax.set(xlabel=f"Comparison {axis.upper()} (mm)", ylabel="Gamma (2%/2 mm)")
+                    ratio_ax.set_ylim(bottom=0)
+                    ratio_ax.set_title(f"1D global; reference ≥{a.gamma_cutoff_percent:g}% of profile max", fontsize=9)
+                    ratio_ax.legend(fontsize=8)
+                    rows += rows_curve(relative, depth_mm=depth, source="gamma", axis=axis,
+                                       actual_mc_depth_mm=actual, unit="dimensionless")
+                else:
+                    relative = ratio(mc, measured, 0)
+                    draw(ratio_ax, relative, f"MC / measurement{suffix}", color=color)
+                    ratio_ax.set(xlabel=f"Comparison {axis.upper()} (mm)",
+                                 ylabel="MC / measurement", ylim=(.95, 1.05))
+                    if a.combine_depths:
+                        ratio_ax.legend(fontsize=8)
+                    rows += rows_curve(relative, depth_mm=depth, source="mc/measurement", axis=axis,
+                                       actual_mc_depth_mm=actual, unit="ratio")
                 if not a.combine_depths or index == 0:
                     ratio_ax.axhline(1, color="gray", linewidth=.8, linestyle="--")
-                ratio_ax.set(xlabel=f"Comparison {axis.upper()} (mm)",
-                             ylabel="MC / measurement", ylim=(.95, 1.05))
-                if a.combine_depths:
-                    ratio_ax.legend(fontsize=8)
-                rows += rows_curve(relative, depth_mm=depth, source="mc/measurement", axis=axis,
-                                   actual_mc_depth_mm=actual, unit="ratio")
             ax.set(xlabel=f"Comparison {axis.upper()} (mm)", ylabel=f"Dose ({unit})",
                    title=(f"{s['field_cm']} cm {a.source} · combined depths" if a.combine_depths else
                           f"{s['field_cm']} cm {a.source} · {depth:g} mm (MC {actual:g} mm)"))
@@ -444,7 +467,9 @@ def run_lateral(run: Run):
         figures.append(f"{name}.png")
     run.meta["results"]["lateral_figures"] = figures
     run.meta["results"]["depth_mapping"] = depth_mapping
-    if not a.mc_only:
+    if gamma_records:
+        run.meta["results"]["lateral_gamma"] = gamma_records
+    if not a.mc_only and a.bottom_panel == "ratio":
         run.meta["results"]["lateral_ratio"] = dict(
             definition="normalized MC / measurement", display_limits=[.95, 1.05],
             interpolation="MC interpolated to measurement coordinates without extrapolation",

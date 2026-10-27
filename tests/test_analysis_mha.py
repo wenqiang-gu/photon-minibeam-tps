@@ -276,3 +276,14 @@ def test_invalid_open_offsets(tmp_path,value):
     config=fixture_config(tmp_path)
     config.write_text(config.read_text().replace('[defaults]',f'[defaults]\nopen_map_x_offset_mm={value}'))
     with pytest.raises(ValueError,match='finite number'):load_config(config)
+
+
+@pytest.mark.parametrize('extra',[[],['--combine-depths']])
+def test_gamma_bottom_panel(tmp_path,extra):
+    config=fixture_config(tmp_path)
+    assert main(['lateral','--config',str(config),'--bottom-panel','gamma',*extra])==0
+    meta=json.loads(next((tmp_path/'out').rglob('metadata.json')).read_text())
+    records=meta['results']['lateral_gamma']
+    assert len(records)==6
+    assert all(r['criteria']=='1D global 2%/2mm' for r in records)
+    assert 'lateral_ratio' not in meta['results']
