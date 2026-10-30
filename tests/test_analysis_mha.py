@@ -287,3 +287,28 @@ def test_gamma_bottom_panel(tmp_path,extra):
     assert len(records)==6
     assert all(r['criteria']=='1D global 2%/2mm' for r in records)
     assert 'lateral_ratio' not in meta['results']
+
+
+@pytest.mark.parametrize('extra',[[],['--agl-ssd-correction']])
+def test_pdd_gamma_optional(tmp_path, extra):
+    import csv
+    config=fixture_config(tmp_path)
+    args=['pdd','--config',str(config)]
+    assert main(args)==0
+    meta_path=next((tmp_path/'out').rglob('metadata.json'))
+    original=json.loads(meta_path.read_text())
+    assert 'pdd_gamma' not in original['results']
+    assert main([*args,'--bottom-panel','gamma',*extra])==0
+    meta=json.loads(meta_path.read_text())
+    records=meta['results']['pdd_gamma']
+    assert len(records)==2+bool(extra)
+    assert all(r['reference']=='measurement' and r['criteria']=='1D global 2%/2mm' for r in records)
+    sphinx=next(r for r in records if r['comparison']=='sphinx')
+    assert sphinx['reference_points']==3
+    assert 'sparse' in sphinx['sampling']
+    assert meta['results']['sphinx_normalization']==original['results']['sphinx_normalization']
+    assert meta['results']['agl']['peaks']==original['results']['agl']['peaks']
+    rows=list(csv.DictReader(next((tmp_path/'out').rglob('pdd.csv')).open()))
+    assert len([r for r in rows if r['comparison']=='sphinx-gamma'])==3
+    assert main([*args,'--mc-only','--bottom-panel','gamma'])==1
+    assert main([*args,'--bottom-panel','gamma','--gamma-cutoff-percent','nan'])==1

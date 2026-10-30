@@ -92,3 +92,26 @@ Interpolation does not recover information missing from coarse MC bins. The
 chosen cutoff can exclude minibeam valleys; inspect tails/PVDR separately, and
 retain statistical and measurement-resolution limitations when interpreting
 pass rates. Definition: [Low et al. (1998)](https://doi.org/10.1118/1.598248).
+
+
+### Optional PDD gamma
+
+`python tools/dose_analysis.py pdd --field 10 --bottom-panel gamma`
+uses the same 1D global 2%/2 mm helper and `--gamma-cutoff-percent` (default 10)
+as lateral analysis. Measurement is the reference and MC the evaluation; only
+measured points inside MC depth coverage and above the reference cutoff enter
+the pass rate. No eligible points gives a null rate, not a zero or passing rate.
+Gamma values and criteria/counts are saved in `pdd.csv` and `metadata.json`.
+The default ratio option preserves previous plots; gamma requires measurements.
+
+AGL and MC retain independent sampled-peak normalization. Gamma plots display
+the full MC depth coverage used by the pass rate; the default ratio plot retains
+its original limits. `--agl-ssd-correction` optionally includes a separate gamma
+against the approximate corrected curve, without changing the raw AGL result.
+SSD or other geometry mismatches remain interpretation limits.
+
+SPHINX retains its single shared reference-depth normalization (20 mm when
+configured). Gamma is evaluated only at the actual measured depth samples and
+shown as discrete points: interpolating MC does not turn four measured depths
+into dense PDD validation. Neither normalization nor interpolation compensates
+for unconfirmed measurement SSD/water-equivalent depth or coarse MC sampling.

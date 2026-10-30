@@ -65,11 +65,12 @@ def parser() -> argparse.ArgumentParser:
         if name == "pdd":
             p.add_argument("--agl-ssd-correction", action="store_true",
                            help="show the approximate SSD-corrected AGL curve and ratio (hidden by default)")
-        if name == "lateral":
+        if name in {"pdd", "lateral"}:
             p.add_argument("--bottom-panel", choices=("ratio", "gamma"), default="ratio",
                            help="ratio (default) or 1D global gamma 2%%/2mm")
             p.add_argument("--gamma-cutoff-percent", type=float, default=10.,
                            help="reference-dose cutoff for gamma; default 10%% of profile maximum")
+        if name == "lateral":
             p.add_argument("--combine-depths", action="store_true", help="overlay depths in one lateral figure")
             p.add_argument("--normalization-mode", choices=("2d", "x", "y"))
             p.add_argument("--axis", choices=("x", "y", "both"), default="both")
@@ -261,6 +262,35 @@ def dimensions(s):
 
 def run_pdd(run: Run):
     a, s = run.args, run.s
+    if a.bottom_panel == "gamma" and a.mc_only:
+        raise ValueError("Gamma requires measurement; remove --mc-only")
+    if not np.isfinite(a.gamma_cutoff_percent) or not 0 <= a.gamma_cutoff_percent < 100:
+        raise ValueError("gamma cutoff must be finite and in [0, 100)")
+    gamma_records = []
+
+    def gamma_panel(ax, evaluation, reference, comparison, *, sparse=False):
+        relative, info = gamma_profile(evaluation, reference, a.gamma_cutoff_percent)
+        valid = np.isfinite(relative.value)
+        info.update(comparison=comparison, reference_points=len(reference.x),
+                    evaluated_depth_range_mm=([float(relative.x[valid].min()),
+                                               float(relative.x[valid].max())] if valid.any() else None),
+                    sampling=("Only measured depth points; sparse sampling is not dense PDD validation"
+                              if sparse else "Measured depth samples within MC coverage"))
+        gamma_records.append(info)
+        rate = info["pass_rate_percent"]
+        label = f"{comparison}: {rate:.1f}% pass" if rate is not None else f"{comparison}: no eligible points"
+        # Sparse measurements remain discrete: never fabricate a dense reference curve.
+        if sparse:
+            ax.plot(relative.x, relative.value, "o", label=label)
+        else:
+            draw(ax, relative, label)
+        ax.set(xlabel="Depth in water (mm)", ylabel="Gamma (2%/2 mm)")
+        ax.set_ylim(0, max(ax.get_ylim()[1], 1.05, float(relative.value[valid].max()) * 1.1) if valid.any() else max(ax.get_ylim()[1], 1.05))
+        ax.set_title(f"1D global; reference ≥{a.gamma_cutoff_percent:g}% of maximum"
+                     + (f"; {len(reference.x)} measured depths only" if sparse else ""), fontsize=9)
+        ax.legend(fontsize=8)
+        rows.extend(rows_curve(relative, comparison=comparison + "-gamma", source="gamma", unit="dimensionless"))
+
     grid = run.grid(a.source)
     hx, hy = dimensions(s)
     curve = mc_pdd(grid, hx, hy)
@@ -289,7 +319,8 @@ def run_pdd(run: Run):
         approximate_ratio = ratio(scaled, approximate, 0)
         fig, axes = plt.subplots(2, 1, figsize=(8, 7), sharex=True,
                                  gridspec_kw={"height_ratios": [3, 1]}, layout="constrained")
-        draw(axes[0], scaled, "MC (peak normalized)")
+        draw(axes[0], scaled, (f"MC — SSD {s['mc_ssd_mm']:g} mm (peak normalized)"
+                               if a.bottom_panel == "gamma" else "MC (peak normalized)"))
         draw(axes[0], agl, f"AGL — SSD {s['agl_ssd_mm']:g} mm")
         show_correction = a.agl_ssd_correction
         if show_correction:
@@ -297,16 +328,25 @@ def run_pdd(run: Run):
                          label=f"AGL → SSD {s['mc_ssd_mm']:g} mm (approx.)")
         axes[0].set(ylabel="PDD (% of peak)", title=f"{s['field_cm']} cm open PDD · peak normalized")
         axes[0].legend()
-        draw(axes[1], r, "MC / AGL")
-        if show_correction:
-            axes[1].plot(approximate_ratio.x, approximate_ratio.value, "--", color="tab:green",
-                         label="MC / AGL approximation")
-        axes[1].legend(fontsize=8)
+        if a.bottom_panel == "gamma":
+            gamma_panel(axes[1], scaled, agl, "agl")
+            if show_correction:
+                gamma_panel(axes[1], scaled, approximate, "agl-ssd-approximation")
+        else:
+            draw(axes[1], r, "MC / AGL")
+            if show_correction:
+                axes[1].plot(approximate_ratio.x, approximate_ratio.value, "--", color="tab:green",
+                             label="MC / AGL approximation")
+            axes[1].legend(fontsize=8)
         if show_correction:
             fig.supxlabel("Peak-normalized inverse-square approximation; no scatter or field-size correction",
                           fontsize=8)
         axes[1].axhline(1, color="gray", linewidth=.8)
-        axes[1].set(xlabel="Depth in water (mm)", ylabel="MC / AGL", xlim=(0, 150), ylim=(.95, 1.05))
+        if a.bottom_panel == "gamma":
+            # Show the full MC coverage used by the pass rate, including deep samples.
+            axes[1].set_xlim(0, float(curve.x[-1]))
+        else:
+            axes[1].set(xlabel="Depth in water (mm)", ylabel="MC / AGL", xlim=(0, 150), ylim=(.95, 1.05))
         run.save(fig, "pdd-agl")
         rows += rows_curve(scaled, comparison="agl", source="mc", unit="percent")
         rows += rows_curve(agl, comparison="agl", source="measurement", unit="percent")
@@ -327,23 +367,34 @@ def run_pdd(run: Run):
         run.meta["results"]["agl"] = dict(metadata=agl_meta, normalization="independent sampled peaks at nonnegative depths",
             peaks=dict(mc=mc_peak, measurement=agl_peak, approximation=approx_peak),
             mc_scale=mc_peak["normalization_factor"], roi_x_half_width_mm=hx, roi_y_half_width_mm=hy,
-            display_limits=dict(depth_mm=[0,150], ratio=[.95,1.05]),
+            display_limits=(dict(depth_mm=[0, float(curve.x[-1])], panel="gamma")
+                            if a.bottom_panel == "gamma" else dict(depth_mm=[0,150], ratio=[.95,1.05])),
             mc_roi_bin_counts=np.unique(curve.counts).tolist())
         planes = run.maps("open")
         scale, info = normalization(grid, planes, hx, hy, fraction, ref)
         vals_counts = [plane_mean(p, hx, hy) for p in planes]
         measured = Curve(np.array([p.depth for p in planes]), np.array([v for v, _ in vals_counts]),
                          counts=np.array([n for _, n in vals_counts]))
-        fig, ax = plt.subplots(figsize=(8, 5))
+        if a.bottom_panel == "gamma":
+            fig, (ax, gamma_ax) = plt.subplots(2, 1, figsize=(8, 7), sharex=True,
+                gridspec_kw={"height_ratios": [3, 1]}, layout="constrained")
+            gamma_panel(gamma_ax, curve.scaled(scale), measured, "sphinx", sparse=True)
+            gamma_ax.axhline(1, color="gray", linewidth=.8)
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5))
         draw(ax, curve.scaled(scale), "MC matched to Sphinx")
         draw(ax, measured, "Sphinx ROI mean", points=True)
         ax.set(xlabel="Depth in water (mm)", ylabel="Measured dose (cGy)",
                title=f"{s['field_cm']} cm open PDD · reference {ref:g} mm")
         ax.legend()
+        if a.bottom_panel == "gamma":
+            fig.supxlabel("Measurement SSD / water-equivalent depth unconfirmed; sparse-depth comparison", fontsize=8)
         run.save(fig, "pdd-sphinx")
         rows += rows_curve(curve.scaled(scale), comparison="sphinx", source="mc", unit="cGy")
         rows += rows_curve(measured, comparison="sphinx", source="measurement", unit="cGy")
         run.meta["results"]["sphinx_normalization"] = info
+        if gamma_records:
+            run.meta["results"]["pdd_gamma"] = gamma_records
     run.prepare()
     write_rows(run.out / "pdd.csv", rows)
 

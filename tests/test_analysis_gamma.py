@@ -30,3 +30,13 @@ def test_gamma_cutoff_and_support():
     assert gamma_profile(e,r,0)[1]['evaluated_points']==3
     with pytest.raises(ValueError):gamma_profile(e,r,100)
     with pytest.raises(ValueError):gamma_profile(e,Curve(r.x,np.zeros(4)))
+
+
+def test_gamma_no_eligible_and_nonfinite():
+    evaluation=Curve(np.array([0.,2.]),np.array([100.,100.]))
+    reference=Curve(np.array([3.,4.]),np.array([100.,100.]))
+    curve,info=gamma_profile(evaluation,reference)
+    assert np.isnan(curve.value).all()
+    assert info['evaluated_points']==0 and info['pass_rate_percent'] is None
+    with pytest.raises(ValueError):
+        gamma_profile(evaluation,Curve(reference.x,np.array([100.,np.nan])))
