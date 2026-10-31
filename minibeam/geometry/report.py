@@ -75,6 +75,13 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                                         [stage.entrance_z,sign*outer],[stage.exit_z,sign*outer],
                                         [stage.exit_z,sign*stage.exit_opening/2]])
                                 ax.add_patch(Polygon(points,fc='#718299',ec='#374b60',lw=.6))
+                    if g and hasattr(g, 'leaf_shape'):
+                        from .diagnostics import material_solids
+                        from scipy.spatial import ConvexHull
+                        for name, vertices in material_solids(head,beam):
+                            if name.startswith('MLCLeaf'):
+                                points=vertices[:,[2,axis]]
+                                ax.add_patch(Polygon(points[ConvexHull(points).vertices],fc='#718299',ec='#374b60',lw=.2,alpha=.4))
                     if ap:
                         for name, points in slit_projections(head, beam, axis):
                             # Translucency reveals overlapping solids; these are
@@ -113,7 +120,7 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                                   'Jaws: uniform-thickness Agility approximation; no sculpted body.']
                     if ap:
                         lines += APERTURE_TYPES[head.config_for(beam).data['aperture']['type']].summary(ap)
-                    lines += ['MLC is a two-bank approximation, not individual leaves.']
+                    lines += ['MLC: individual rigid leaves (approximate sides and tip calibration).' if hasattr(g,'leaf_shape') else 'MLC is a two-bank approximation, not individual leaves.']
                 else:lines += ['Configured assembly disabled.']
                 info.text(0,1,'\n'.join(lines),va='top',fontsize=8.5,linespacing=1.35,family='DejaVu Sans')
                 pdf.savefig(fig);plt.close(fig)

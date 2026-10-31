@@ -307,3 +307,38 @@ Existing saved projects and their hashes remain unchanged; use a fresh project
 when preparing the new geometry. A smaller body can expose paths previously
 blocked by the approximation, so compare transport results before adopting it
 as a model of the measured machine.
+
+## Static individual MLC leaves
+
+In the selected geometry TOML, set `[mlc].model = "leaves"` to replace the
+continuous banks. `model = "simple"` is the default (two continuous blocks).
+The older `"banks"` name remains accepted as a compatibility alias. With
+`shape_source = "csv"` and `shape_file = "mlc_shape_example.csv"`, the supplied
+`mlc_shape_example.csv` is used. A custom path is relative to the TOML file.
+CSV leaf offsets are millimeters; bank positions and field sizes are centimeters
+at the planning reference plane. They are nominal edges, not curvature centers.
+
+For DICOM use `shape_source = "rtplan"`, set `shape_file` to an RTPLAN, and
+select `shape_beam_number` (DICOM BeamNumber) and `shape_control_point_index`
+(zero-based). Only MLCX is supported. Earlier control-point positions are inherited.
+This reads a static shape only, not delivery sequencing, gantry or head rotations.
+All workflow beams use this same shape in their native fixed hardware frames.
+
+`leaf_length_mm = 155.0` is an approximate rigid length based on the supplied
+Elekta slide. Thickness, tip radius, material and placement retain their existing
+settings. Leaf side widths are projected at the MLC midpoint and extruded; leaf
+side focusing, tongue-and-groove and calibrated dosimetric offsets are not modeled.
+The fixed continuous-bank X envelope does not limit translating rigid leaves;
+actual leaf bounds determine the collision envelope. Transverse height is checked.
+Rounded tips use source-ray tangency; any overlap is removed by symmetric
+translation. Requested edges, adjustments, polygons and input hash are recorded
+in TOPAS device metadata. Original leaf files are not required for saved collection.
+No leaf-position arrays are added to native steering, and bixel selection is unchanged.
+Use a fresh project and inspect geometry before transport. The screenshot-derived
+CSV is an example, not a verified machine calibration.
+
+MLC shape files are read only during preparation. Generated TOPAS solids need no
+CSV or RTPLAN on the cluster. Paths are relative to the selected TOML, not the
+working directory; an absolute path works regardless of the TOML location.
+There is no special `packaged` filename keyword. Package callers constructing
+geometry directly from dictionaries should supply an absolute shape-file path.

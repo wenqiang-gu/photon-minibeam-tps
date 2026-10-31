@@ -32,6 +32,10 @@ def material_solids(head, beam):
     """
     g, ap, _, _ = head.resolved(beam)
     solids = []
+    for leaf in getattr(g, 'leaf_shape', {}).get('leaves', []):
+        points=extrude(np.asarray(leaf['polygon'])+[0,leaf['center_z']],0,leaf['y_half'])
+        points[:,1]+=leaf['y_center']
+        solids.append((leaf['name'],points))
     for axis, stage, name in [(0, g.mlc, 'MLC'), (1, g.lower_jaw, 'LowerJaw')]:
         if stage is None:
             continue

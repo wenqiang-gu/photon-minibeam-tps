@@ -41,6 +41,19 @@ def resolve(config,sad):
         if d-t/2<=0 or d+t/2>=sad:raise ValueError(f'{key} must lie between source and isocenter')
         z=d-sad
         stage=JawStage(axis,d,z,t,z-t/2,z+t/2,opening*(d-t/2)/sad,opening*(d+t/2)/sad)
+        if key=='mlc' and c['model']=='leaves':
+            from .mlc_shape import resolve_leaves, render_leaves
+            g.leaf_shape=resolve_leaves(c,sad)
+            vertices=[]
+            for leaf in g.leaf_shape['leaves']:
+                for x,zz in leaf['polygon']:
+                    for y in (leaf['y_center']-leaf['y_half'],leaf['y_center']+leaf['y_half']):
+                        vertices.append([x,y,zz+z])
+            points=np.asarray(vertices); lo=points.min(axis=0);hi=points.max(axis=0)
+            envelopes.append(dict(name='mlc',center=((lo+hi)/2).tolist(),half_size=((hi-lo)/2).tolist(),rotation=np.eye(3).tolist()))
+            stages.append((key,z-t/2,z+t/2))
+            texts.append(render_leaves(g.leaf_shape,field['material']))
+            continue
         if c['round_tip_enabled']:
             radius=c['tip_radius_mm'];zc=z+c['tip_center_z_offset_mm']
             if radius<=max(abs(stage.entrance_z-zc),abs(stage.exit_z-zc)):

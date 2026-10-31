@@ -48,7 +48,7 @@ PHASE_SPACE_FILE_BASES = [
 HISTORIES_PER_JOB = 680_000_000
 # Total batches initially prepared; add_batches.sh can append more later.
 # Reuses saved source particles; only TOPAS transport seeds change.
-NUMBER_OF_BATCHES = 20
+NUMBER_OF_BATCHES = 1 # 20
 RANDOM_SEED = 12345
 TOPAS_THREADS_PER_JOB = 8
 

@@ -30,6 +30,12 @@ class FieldGeometry(FrozenGeometry):
 
 
 class MLCGeometry(FrozenGeometry):
+    model: Literal["simple", "leaves", "banks"] = "simple"  # banks: legacy alias
+    shape_source: Literal["csv", "rtplan"] = "csv"
+    shape_file: str = "mlc_shape_example.csv"
+    shape_beam_number: int = 1
+    shape_control_point_index: int = Field(default=0, ge=0)
+    leaf_length_mm: float = Field(default=155., gt=0)
     outer_width_mm: float = Field(gt=0)
     outer_height_mm: float = Field(gt=0)
     enabled: bool

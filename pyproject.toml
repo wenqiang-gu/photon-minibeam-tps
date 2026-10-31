@@ -21,7 +21,7 @@ where = ["."]
 include = ["minibeam*", "projects"]
 
 [tool.setuptools.package-data]
-"minibeam.geometry" = ["config.toml", "water_config.toml"]
+"minibeam.geometry" = ["config.toml", "water_config.toml", "mlc_shape_example.csv"]
 "minibeam.materials" = ["data/*.txt", "data/*.md"]
 
 [tool.pytest.ini_options]

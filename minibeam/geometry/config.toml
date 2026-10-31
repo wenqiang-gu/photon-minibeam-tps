@@ -10,6 +10,14 @@ material = "G4_W"
 side_margin_mm = 10.0
 
 [mlc]
+# Opt in to a static individual-leaf shape; default keeps continuous banks.
+model = "simple" # two continuous blocks; "leaves" enables the CSV/RTPLAN shape
+shape_source = "csv" # or "rtplan"
+shape_file = "mlc_shape_example.csv" # relative to this TOML; absolute paths also work
+shape_beam_number = 1 # DICOM BeamNumber (RTPLAN only)
+shape_control_point_index = 0 # zero-based; inherited positions supported
+leaf_length_mm = 155.0 # approximate length from supplied Elekta leaf drawing
+
 # Fixed pair envelope X/Y, including opening; approximate continuous banks.
 # Motivated by leaf dimensions, not a verified manufacturer bank envelope.
 outer_width_mm = 310.0
