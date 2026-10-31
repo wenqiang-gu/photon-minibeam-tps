@@ -330,8 +330,8 @@ settings. Leaf side widths are projected at the MLC midpoint and extruded; leaf
 side focusing, tongue-and-groove and calibrated dosimetric offsets are not modeled.
 The fixed continuous-bank X envelope does not limit translating rigid leaves;
 actual leaf bounds determine the collision envelope. Transverse height is checked.
-Rounded tips use source-ray tangency; any overlap is removed by symmetric
-translation. Requested edges, adjustments, polygons and input hash are recorded
+Rounded tips use source-ray tangency; a deficient physical gap is corrected by
+symmetric translation (see below). Requested edges, adjustments, polygons and input hash are recorded
 in TOPAS device metadata. Original leaf files are not required for saved collection.
 No leaf-position arrays are added to native steering, and bixel selection is unchanged.
 Use a fresh project and inspect geometry before transport. The screenshot-derived
@@ -342,3 +342,28 @@ CSV or RTPLAN on the cluster. Paths are relative to the selected TOML, not the
 working directory; an absolute path works regardless of the TOML location.
 There is no special `packaged` filename keyword. Package callers constructing
 geometry directly from dictionaries should supply an absolute shape-file path.
+
+### Minimum physical leaf-tip gap
+
+The patient and water TOMLs set `[mlc].minimum_leaf_gap_mm = 1.0`, following
+Elekta's *Agility BLD* tutorial (2021), PDF pages 75–76, “Closed Leaf Constraint.”
+This is the minimum transverse separation of opposing tips **at the physical MLC
+bank**, not an isocenter-plane opening and not the 90 μm gap between adjacent
+leaves in one bank. It applies only to `model = "leaves"`.
+
+Every opposing pair is checked through the leaf thickness, including the
+curvature-center depth. If its physical separation is too small, both complete
+leaves move outward equally to reach the minimum. This can widen a small requested
+opening; pairs already satisfying the limit are unchanged. The midpoint, rigid
+leaf length and tip shape are preserved. This does not implement Elekta's
+radiation-edge calibration or controller-specific closed-position conversion.
+
+Preparation and geometry PDFs report the minimum, adjusted-pair count and largest
+per-leaf translation. TOPAS device records retain each pair's original/resolved
+physical gap and each leaf's signed translation. TOPAS and collision geometry use
+the same resolved solids. The setting changes the preparation fingerprint.
+
+Zero restores overlap-only correction. Missing settings in older configurations
+or geometry snapshots default to zero. Existing projects are unchanged and
+collection/forward continue to use saved information. Prepare a fresh project to
+apply a different gap; all other hardware and source settings remain independent.

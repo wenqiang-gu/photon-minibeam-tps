@@ -103,9 +103,12 @@ def resolve_leaves(c, sad):
     """Rigid extruded leaves; side widths projected at the body midpoint.
 
     No tongue/groove, side focusing or transmission calibration is implied.
-    Symmetric separation removes rounded-tip overlap without changing shapes.
+    Symmetric separation enforces a physical transverse gap without changing shapes.
     """
     import numpy as np
+    minimum_gap = c.get('minimum_leaf_gap_mm', 0.)
+    if isinstance(minimum_gap, bool) or not isinstance(minimum_gap, (int, float)) or not math.isfinite(minimum_gap) or minimum_gap < 0:
+        raise ValueError('minimum_leaf_gap_mm must be finite and nonnegative (not Boolean)')
     path = Path(c['shape_file']).expanduser()
     shape = (read_csv_shape(path) if c['shape_source'] == 'csv' else
              read_rtplan_shape(path, beam_number=c['shape_beam_number'], control_point_index=c['shape_control_point_index']))
@@ -117,6 +120,7 @@ def resolve_leaves(c, sad):
         raise ValueError('MLC tip radius does not cover leaf thickness')
     arc = np.sqrt(radius**2-(z-zc)**2)
     leaves=[]
+    pair_gaps=[]
     for pair in shape.pairs:
         profiles=[]
         for side, edge in [(-1,pair.bank_x1_mm),(1,pair.bank_x2_mm)]:
@@ -128,7 +132,16 @@ def resolve_leaves(c, sad):
             else:
                 inner=slope*(d+z); apex=float(inner[len(inner)//2])
             profiles.append((inner,apex))
-        correction=max(0.,float(np.max(profiles[0][0]-profiles[1][0])))/2
+        # The rounded profiles share their axial curvature center: the minimum
+        # transverse gap occurs there (or at the nearest end face). Flat profiles
+        # have a linear separation with its minimum at an end face. All these
+        # locations are included in z, also used by the generated polygon solids.
+        original_gap=float(np.min(profiles[1][0]-profiles[0][0]))
+        correction=max(0.,minimum_gap-original_gap)/2
+        pair_gaps.append(dict(pair=pair.number, original_gap_mm=original_gap,
+                              resolved_gap_mm=original_gap+2*correction,
+                              negative_leaf_translation_mm=-correction,
+                              positive_leaf_translation_mm=correction))
         for index,side in enumerate((-1,1)):
             inner,apex=profiles[index]; inner=inner+side*correction
             outer=apex+side*(length+correction)
@@ -142,7 +155,11 @@ def resolve_leaves(c, sad):
                 pair=pair.number,bank=side,requested_position_mm=(pair.bank_x1_mm if side<0 else pair.bank_x2_mm),
                 adjustment_mm=side*correction, polygon=polygon, y_center=(lo+hi)/2,y_half=(hi-lo)/2,center_z=d-sad))
     return dict(source=shape.source,sha256=shape.sha256,beam_number=shape.beam_number,
-                control_point_index=shape.control_point_index,leaves=leaves)
+                control_point_index=shape.control_point_index,leaves=leaves,
+                minimum_leaf_gap_mm=float(minimum_gap), pair_gaps=pair_gaps,
+                adjusted_pair_count=sum(p['positive_leaf_translation_mm']>0 for p in pair_gaps),
+                largest_leaf_adjustment_mm=max(p['positive_leaf_translation_mm'] for p in pair_gaps),
+                gap_convention='minimum beam-X separation at common axial depth; physical MLC bank mm')
 
 
 def render_leaves(record, material):
@@ -156,3 +173,9 @@ def render_leaves(record, material):
             f'u:Ge/{n}/Scale1 = 1',f'u:Ge/{n}/Scale2 = 1',f'd:Ge/{n}/RotX = -90 deg',
             f'd:Ge/{n}/TransY = {leaf["y_center"]:.12g} mm',f'd:Ge/{n}/TransZ = {leaf["center_z"]:.12g} mm'])
     return '\n'.join(lines)
+
+
+def leaf_gap_summary(record):
+    """Shared text for preparation and geometry reports, from resolved solids."""
+    return [f"MLC minimum physical tip gap: {record['minimum_leaf_gap_mm']:g} mm at bank",
+            f"Adjusted pairs: {record['adjusted_pair_count']}/{len(record['pair_gaps'])}; largest per-leaf shift: {record['largest_leaf_adjustment_mm']:.6g} mm"]

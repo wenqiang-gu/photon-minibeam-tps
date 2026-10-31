@@ -251,6 +251,9 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                         else:
                             lines.append(f'{key.upper()}: disabled')
                     g, aperture, _, _ = head.resolved(beam)
+                    if hasattr(g, 'leaf_shape'):
+                        from .mlc_shape import leaf_gap_summary
+                        lines += leaf_gap_summary(g.leaf_shape)
                     if g.jaw_round_tip:
                         tip=g.jaw_round_tip
                         lines += [f'Jaw tip radius {tip.radius:g} mm; axial offset {tip.center_z_offset:g} mm',

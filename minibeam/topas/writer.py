@@ -201,6 +201,13 @@ class JobWriter:
                 f'  Details: {output / "collisions.json"}')
             conflict.diagnostics_dir = output
             raise conflict from None
+        from ..geometry.mlc_shape import leaf_gap_summary
+        for device in self.devices:
+            if isinstance(device, TreatmentHead):
+                for index, beam in enumerate(stf.beams, 1):
+                    geometry, _, _, _ = device.resolved(beam)
+                    if hasattr(geometry, 'leaf_shape'):
+                        print(f"Beam {index}: " + "; ".join(leaf_gap_summary(geometry.leaf_shape)))
         definition["planning"] = planning_snapshot(
             self._plan_info, stf, cst)
         for record in definition['planning']['beams']:

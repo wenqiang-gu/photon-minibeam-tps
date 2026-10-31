@@ -10,6 +10,12 @@ material = "G4_W"
 side_margin_mm = 10.0
 
 [mlc]
+# Minimum physical separation between opposing tips at the MLC bank.
+# Applies to model = "leaves"; not projected to the reference plane.
+# Pairs below this gap move apart symmetrically, including small open pairs.
+# Elekta Agility BLD tutorial (2021), PDF pp. 75-76: Closed Leaf Constraint.
+# This is distinct from the 90 micrometre gap between adjacent leaves.
+minimum_leaf_gap_mm = 1.0
 # Opt in to a static individual-leaf shape; default keeps continuous banks.
 model = "leaves" # two continuous blocks; "leaves" enables the CSV/RTPLAN shape
 shape_source = "csv" # or "rtplan"

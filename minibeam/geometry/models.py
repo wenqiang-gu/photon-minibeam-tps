@@ -36,6 +36,7 @@ class MLCGeometry(FrozenGeometry):
     shape_beam_number: int = 1
     shape_control_point_index: int = Field(default=0, ge=0)
     leaf_length_mm: float = Field(default=155., gt=0)
+    minimum_leaf_gap_mm: float = Field(default=0., ge=0)  # legacy snapshots: overlap-only
     outer_width_mm: float = Field(gt=0)
     outer_height_mm: float = Field(gt=0)
     enabled: bool

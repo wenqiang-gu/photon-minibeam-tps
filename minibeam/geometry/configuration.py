@@ -37,6 +37,8 @@ class GeometryConfig:
         text = (Path(path).read_text() if path is not None else
                 resources.files('minibeam.geometry').joinpath('config.toml').read_text())
         config = cls(text)
+        # Report invalid numeric settings before serializing resolved asset paths.
+        config.validate()
         data = config.data
         if data["mlc"]["shape_file"]:
             source = Path(data["mlc"]["shape_file"]).expanduser()
@@ -44,7 +46,6 @@ class GeometryConfig:
                 source = (Path(path).resolve().parent if path else Path(__file__).parent) / source
             data["mlc"]["shape_file"] = str(source.resolve())
             config = cls.from_data(data)
-        config.validate()
         return config
 
     @classmethod
@@ -60,7 +61,7 @@ class GeometryConfig:
     def data(self):
         data = tomllib.loads(self.text)
         if isinstance(data.get('mlc'), dict):
-            for key,value in dict(model='simple',shape_source='csv',shape_file='mlc_shape_example.csv',shape_beam_number=1,shape_control_point_index=0,leaf_length_mm=155.).items():
+            for key,value in dict(model='simple',shape_source='csv',shape_file='mlc_shape_example.csv',shape_beam_number=1,shape_control_point_index=0,leaf_length_mm=155.,minimum_leaf_gap_mm=0.).items():
                 data['mlc'].setdefault(key,value)
         if isinstance(data.get('aperture'), dict):
             data['aperture'].setdefault('lateral_shift_mm', 0.0)
@@ -92,7 +93,7 @@ class GeometryConfig:
         if not isinstance(data['aperture'].get('type'),str) or data['aperture'].get('type') not in APERTURE_TYPES:
             raise ValueError('Unknown aperture.type; currently supported: ' + ', '.join(APERTURE_TYPES))
         aperture_type=APERTURE_TYPES[data['aperture']['type']]
-        allowed['mlc'] |= {'model','shape_source','shape_file','shape_beam_number','shape_control_point_index','leaf_length_mm'}
+        allowed['mlc'] |= {'model','shape_source','shape_file','shape_beam_number','shape_control_point_index','leaf_length_mm','minimum_leaf_gap_mm'}
         allowed['aperture']=aperture_type.config_keys
         for section, keys in allowed.items():
             table=data[section]
@@ -116,6 +117,6 @@ class GeometryConfig:
                     if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
                         raise ValueError(f'{section}.{key} must be finite numeric')
                     signed = key.startswith('rotation_') or key in {'tip_center_z_offset_mm', 'lateral_shift_mm'}
-                    if not signed and (value < 0 or (value == 0 and key != 'side_margin_mm')):
+                    if not signed and (value < 0 or (value == 0 and key not in {'side_margin_mm','minimum_leaf_gap_mm'})):
                         raise ValueError(f'{section}.{key} must be positive')
         aperture_type.validate_config(data['aperture'])

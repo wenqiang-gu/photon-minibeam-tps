@@ -203,6 +203,9 @@ def test_field_override_and_legacy_default(monkeypatch,tmp_path):
     small_water(monkeypatch)
     original=files('minibeam.geometry').joinpath('water_config.toml').read_text()
     config=tmp_path/'custom.toml'
+    # Keep the relative shape asset valid when the editable TOML uses leaves.
+    shutil.copyfile(files('minibeam.geometry').joinpath('mlc_shape_example.csv'),
+                    tmp_path/'mlc_shape_example.csv')
     config.write_text(original.replace('width_mm = 100.0','width_mm = 80.0').replace('height_mm = 100.0','height_mm = 60.0'))
     monkeypatch.setattr(water,'GEOMETRY_CONFIG',str(config))
     monkeypatch.setattr(water,'FIELD_SIZE_MM',100.)

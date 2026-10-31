@@ -108,6 +108,9 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                             cfg=d['mlc' if title=='MLC' else 'jaws']
                             lines += [f"{title} pair envelope X/Y: {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm", f'{title}: source-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
                             f'  Entrance / exit opening: {stage.entrance_opening:.3f} / {stage.exit_opening:.3f} mm']
+                    if hasattr(g, 'leaf_shape'):
+                        from .mlc_shape import leaf_gap_summary
+                        lines += leaf_gap_summary(g.leaf_shape)
                     if g.mlc_round_tip:
                         tip=g.mlc_round_tip
                         lines += [f'MLC tip: radius {tip.radius:g} mm; offset {tip.center_z_offset:g} mm',
