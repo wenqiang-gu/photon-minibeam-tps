@@ -9,6 +9,7 @@ from .coordinates import patient_center
 from .spatial import beam_basis, corners
 from .patient import axial_slice_for_isocenter
 from .diagnostics import material_solids
+from .report import entrance_distances, draw_entrance_dimensions
 
 
 def patient_scene(ct, stf, head, source_records=None):
@@ -229,13 +230,23 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                 fig=plt.figure(figsize=(14,11))
                 fig.suptitle(f"Beam {item['index']} | Gantry {beam.gantry_angle:g} deg, couch {beam.couch_angle:g} deg",fontsize=16)
                 gs=fig.add_gridspec(2,3,height_ratios=[2,2],left=.065,right=.97,bottom=.08,top=.88,wspace=.3,hspace=.2)
-                for k,(axes,title) in enumerate([((0,1),'Axial X-Y'),((0,2),'Coronal X-Z'),((1,2),'Sagittal Y-Z')]):
+                views=[((0,1),'Axial X-Y'),((0,2),'Coronal X-Z'),((1,2),'Sagittal Y-Z')]
+                direction=(item['iso']-item['source']) / beam.sad
+                dimension_view=int(np.argmax([np.linalg.norm(direction[list(axes)]) for axes,_ in views]))
+                for k,(axes,title) in enumerate(views):
                     ax=fig.add_subplot(gs[0,k]);view2d(ax,[item],axes,slice_index=item['slice']['slice_index_1based'] if k==0 else None)
                     ax.set_title(title+' projection')
+                    if k == dimension_view:
+                        occupied=np.concatenate([box, [item['source'],item['iso']],
+                            *[points for _,points in item['solids']],
+                            *([item['phase_plane']] if item['phase_plane'] is not None else [])])
+                        draw_entrance_dimensions(ax,item['source'][list(axes)],direction[list(axes)],
+                            entrance_distances(head,beam),occupied[:,axes])
                 ax=fig.add_subplot(gs[1,:]);ax.axis('off')
                 lines=[f"Source LPS (mm): {np.round(item['source'],3).tolist()}",
                        f"Isocenter LPS (mm): {np.round(item['iso'],3).tolist()} | CT center: {np.round(center,3).tolist()}",
                        f"SAD: {beam.sad:g} mm | Bixel width: {beam.bixel_width:g} mm | Axial slice: {item['slice']['slice_index_1based']}"]
+                lines.append('Entrance arrows: true axial distances from the nominal focal point, not the replay plane.')
                 if item['phase_plane'] is not None:
                     lines[0]=lines[0].replace('Source LPS','Nominal focal point LPS')
                     lines.append(f"Phase-space frame origin LPS (mm): {np.round(item['phase_origin'],3).tolist()}")

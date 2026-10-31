@@ -9,6 +9,73 @@ from .coordinates import patient_center
 from .apertures import APERTURE_TYPES
 
 
+def entrance_distances(head, beam):
+    """Axial distances from the nominal focal point, from authoritative settings."""
+    if head is None:
+        return []
+    data = head.config_for(beam).data
+    if not data['assembly']['enabled']:
+        return []
+    return [(label, data[key]['source_to_center_mm']-data[key]['thickness_mm']/2)
+            for key, label in [('mlc', 'MLC'), ('jaws', 'jaw')] if data[key]['enabled']]
+
+
+def draw_entrance_dimensions(ax, source, direction, distances, occupied):
+    """Draw projected dimension lines; labels retain true axial lengths in mm.
+
+    ``direction`` is a projected 3D unit direction, deliberately not normalized:
+    this keeps the endpoints correct for foreshortened patient views.
+    """
+    if not distances:
+        return
+    source, direction, occupied = map(np.asarray, (source, direction, occupied))
+    length = np.linalg.norm(direction)
+    if length < 1e-10:
+        raise ValueError('Entrance dimensions require a non-degenerate beam projection')
+    normal = np.array([direction[1], -direction[0]]) / length
+    stride = max(35., .065 * np.ptp(occupied, axis=0).max())
+    ax.figure.canvas.draw()
+    pixels_per_mm = np.linalg.norm(ax.transData.transform(source+normal)-ax.transData.transform(source))
+    # Reserve enough screen space for two-line labels in small patient panels.
+    stride = max(stride, (30*ax.figure.dpi/72) / pixels_per_mm)
+    clearance = max(0., ((occupied-source) @ normal).max())
+    angle = np.degrees(np.arctan2(direction[1], direction[0]))
+    angle = (angle+90) % 180 - 90
+    bounds, labels = [], []
+    for index, (label, distance) in enumerate(distances):
+        endpoint = source + direction*distance
+        offset = normal*(clearance + stride*(index+1))
+        start, end = source+offset, endpoint+offset
+        for point, shifted in [(source, start), (endpoint, end)]:
+            ax.plot(*np.array([point, shifted+normal*stride*.15]).T,
+                    color='#526577', lw=.6, ls=':', zorder=7)
+        ax.annotate('', xy=end, xytext=start,
+                    arrowprops=dict(arrowstyle='<->', color='#304b63', lw=.8,
+                                    shrinkA=0, shrinkB=0), zorder=8)
+        position = (start+end)/2 + normal*stride*.30
+        labels.append(ax.text(*position, f'Source → {label} entrance\n{distance:g} mm',
+                fontsize=7.5, ha='center', va='center', rotation=angle,
+                rotation_mode='anchor', color='#304b63', zorder=9,
+                bbox=dict(facecolor='white', edgecolor='none', alpha=.9, pad=1)))
+        bounds.extend([start, end, position+normal*stride*.65])
+    bounds = np.asarray(bounds)
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    ax.set_xlim(min(xlim[0], bounds[:,0].min()-stride*.3),
+                max(xlim[1], bounds[:,0].max()+stride*.3))
+    ax.set_ylim(min(ylim[0], bounds[:,1].min()-stride*.3),
+                max(ylim[1], bounds[:,1].max()+stride*.3))
+    # Text has a fixed screen size; account for it after equal-aspect patient
+    # panels settle, rather than estimating its width in physical millimeters.
+    for _ in range(3):
+        ax.figure.canvas.draw()
+        renderer = ax.figure.canvas.get_renderer()
+        boxes = [text.get_window_extent(renderer).expanded(1.12, 1.2) for text in labels]
+        points = np.concatenate([ax.transData.inverted().transform(box.get_points()) for box in boxes])
+        xlim, ylim = ax.get_xlim(), ax.get_ylim()
+        ax.set_xlim(min(xlim[0], points[:,0].min()), max(xlim[1], points[:,0].max()))
+        ax.set_ylim(min(ylim[0], points[:,1].min()), max(ylim[1], points[:,1].max()))
+
+
 def slit_projections(head, beam, axis):
     """Project complete collision solids into beam-local (Z, transverse) axes."""
     from scipy.spatial import ConvexHull
@@ -49,7 +116,7 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                     ax.axhline(0,color='#718096',lw=.7)
                     ax.axvline(0,color='#167d9a',ls='--',lw=1)
                     ax.plot(-beam.sad,0,'*',color='#cb8500',ms=12)
-                    ax.annotate('Source',(-beam.sad,0),xytext=(5,10),textcoords='offset points',fontsize=9)
+                    ax.annotate('Nominal source',(-beam.sad,0),xytext=(5,10),textcoords='offset points',fontsize=9)
                     ax.add_patch(Rectangle((ct_local[:,2].min(),ct_local[:,axis].min()),
                         np.ptp(ct_local[:,2]),np.ptp(ct_local[:,axis]),fc='#e8edf1',ec='#8896a0',ls='--',label='CT box projection'))
                     for e in envelopes:
@@ -90,6 +157,10 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                                                  lw=.4, alpha=.18 if name.startswith('Frame') else .5))
                     ax.set_xlim(-beam.sad-45,max(50,ct_local[:,2].max()+20))
                     ax.set_ylim(min(-230,ct_local[:,axis].min()-30),max(240,ct_local[:,axis].max()+30))
+                    occupied = np.concatenate([ct_local, [[0,0,-beam.sad]],
+                                               *[corners(e) for e in envelopes]])
+                    draw_entrance_dimensions(ax, [-beam.sad,0], [1,0],
+                                             entrance_distances(head, beam), occupied[:,[2,axis]])
                     ax.set_xlabel('Beam-local Z (mm); isocenter at 0',fontsize=9)
                     ax.set_ylabel(f'{axis_name} (mm), projection',fontsize=9);ax.grid(alpha=.15)
                 if ap:
@@ -98,7 +169,8 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                     entrance.axis('off');entrance.text(.1,.5,'No downstream aperture',fontsize=12)
                 lines=['GEOMETRY RECORD', 'Schematic, not a patient surface or dose image.',
                        'Dashed gray: conservative CT box projection.', 'Dashed orange: configured field edges.',
-                       'Brass: translucent frame/blade projections; overlaps retained.']
+                       'Brass: translucent frame/blade projections; overlaps retained.',
+                       'Entrance arrows start at the nominal focal point, not the replay plane.']
                 if head:
                     d=head.config_for(beam).data;f=d['field']
                     lines += [f"Field at isocenter: {f['width_mm']:g} x {f['height_mm']:g} mm",

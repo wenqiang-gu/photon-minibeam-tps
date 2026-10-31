@@ -185,6 +185,14 @@ Water overviews use beam-local longitudinal projections of complete frame/blade
 solids; transparency reveals overlap rather than artificial slit gaps. The entrance
 aperture detail is in its own local coordinates before assembly rotation.
 
+Dimension arrows label the distance from the nominal focal point to the MLC and
+jaw **entrance surfaces** (`source_to_center_mm - thickness_mm / 2`). Water
+reports show them in both longitudinal panels; patient detail pages use the
+projection with the longest visible beam axis. Labels retain true axial distances
+even when the drawing is foreshortened. These distances do not start at the
+phase-space replay plane. Disabled devices have no arrows; body and curvature
+centers remain separately identified in the geometry records.
+
 `ENABLE_OPENGL` adds axes, the isocenter CT slice and material-free cyan CT boundary
 for DICOM geometry; cropped boundaries are also shown. Disable interactive viewing
 for cluster batch runs. Display components do not change transport material or scoring.
