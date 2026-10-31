@@ -87,6 +87,9 @@ def test_preparation_records_and_fingerprint(case,tmp_path,capsys):
         engine=TOPASPhotonEngine(plan,water=True,geometry_config=str(path))
         root=engine.prepare_jobs(ct,cst,stf,bundle_dir=tmp_path/f'run{gap}')
         manifest=json.loads((root/'manifest.json').read_text())
+        axial=manifest['jobs'][0]['devices'][0]['parameters']['mlc_jaws']['mlc_axial_reference']
+        assert axial['body_center_from_source_mm']==pytest.approx(356.8)
+        assert axial['tip_curvature_center_from_source_mm']==pytest.approx(349.3)
         record=manifest['jobs'][0]['devices'][0]['parameters']['mlc_jaws']['leaf_shape']
         assert record['minimum_leaf_gap_mm']==gap
         assert min(p['resolved_gap_mm'] for p in record['pair_gaps'])>=gap-1e-10
@@ -117,10 +120,13 @@ def test_gap_report(case,tmp_path,monkeypatch,patient):
         write_geometry_report(ct,stf,head,tmp_path/'water.pdf')
     assert any('MLC minimum physical tip gap: 1 mm at bank' in s for s in text)
     assert any('Adjusted pairs:' in s for s in text)
+    assert any('MLC body center: 356.8 mm from source; entrance/exit: 311.8/401.8 mm' in s for s in text)
+    assert any('MLC tip-curvature center: 349.3 mm from source' in s for s in text)
 
 
 @pytest.mark.topas
-def test_leaf_gap_transport(case,tmp_path):
+@pytest.mark.parametrize('model',['simple','leaves'])
+def test_leaf_gap_transport(case,tmp_path,model):
     import os
     from minibeam import TOPASPhotonEngine
     from test_topas import execute_jobs
@@ -132,7 +138,7 @@ def test_leaf_gap_transport(case,tmp_path):
     shape.write_text('leaf_pair,offset_mm,field_size_cm,bank_x1_cm,bank_x2_cm\n'
                      '1,-7.5,0,0,0\n2,-2.5,0.05,-0.025,0.025\n'
                      '3,2.5,1,-0.5,0.5\n4,7.5,0,2,2\n')
-    data=config();data['mlc']['shape_file']=str(shape)
+    data=config();data['mlc'].update(shape_file=str(shape),model=model)
     data['aperture']['enabled']=False
     path=tmp_path/'geometry.toml';path.write_text(GeometryConfig.from_data(data).text)
     engine=TOPASPhotonEngine(plan,water=True,geometry_config=str(path),histories=100)

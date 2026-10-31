@@ -109,9 +109,15 @@ Native steering is enriched with immutable per-beam geometry. Attached snapshots
 authoritative for parameters, collisions, reports, manifests and MATLAB exports;
 preparation does not overwrite them by rereading TOML.
 
-The packaged reference has MLC center 350 mm, jaws 470 mm and slit center 707 mm
-from the source. Inspect the actual selected TOML before changing hardware. MLC is
-a simplified two-bank model, not individual leaves. No patient clearance is assumed.
+The packaged reference has MLC **body center 356.8 mm**, jaws 470 mm and slit
+center 707 mm from the source. Elekta's *Agility BLD* tutorial (2021), PDF pages
+9 and 17, places the MLC tip-curvature center at **349.3 mm**. With 90 mm
+thickness and the retained -7.5 mm offset, the entrance and exit are 311.8 and
+401.8 mm. The body-center setting applies to both simple banks and individual
+leaves; projected widths and tip tangency are recalculated at this placement.
+Custom configurations and saved snapshots retain their explicit distances; fresh
+preparation is required to apply the corrected packaged reference. Inspect the
+selected TOML before changing hardware. No patient clearance is assumed.
 All conservative transport-volume and hardware checks remain enabled. Moving a
 focused collimator's source-to-center distance currently regenerates focused blade
 angles; it is not a rigid relocation of a fixed manufactured collimator.

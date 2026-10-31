@@ -38,6 +38,11 @@ def resolve(config,sad):
         c=data[key]
         if not c['enabled']:continue
         d,t=c['source_to_center_mm'],c['thickness_mm']
+        if key == 'mlc':
+            g.mlc_axial_reference = dict(body_center_from_source_mm=d,
+                entrance_from_source_mm=d-t/2, exit_from_source_mm=d+t/2,
+                tip_curvature_center_from_source_mm=(d+c['tip_center_z_offset_mm']
+                                                    if c['round_tip_enabled'] else None))
         if d-t/2<=0 or d+t/2>=sad:raise ValueError(f'{key} must lie between source and isocenter')
         z=d-sad
         stage=JawStage(axis,d,z,t,z-t/2,z+t/2,opening*(d-t/2)/sad,opening*(d+t/2)/sad)

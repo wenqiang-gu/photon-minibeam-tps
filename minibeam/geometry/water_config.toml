@@ -29,8 +29,11 @@ leaf_length_mm = 155.0 # approximate length from supplied Elekta leaf drawing
 outer_width_mm = 310.0
 outer_height_mm = 160.0
 enabled = true
-# Simplified continuous X banks, not individual leaves. All distances from source.
-source_to_center_mm = 350.0
+# Axial body center, not tip-curvature center; all distances from source.
+# Elekta Agility BLD tutorial (2021), PDF pp. 9 and 17:
+# tip-curvature center = 349.3 mm; body center = 349.3 + (90/2 - 37.5).
+# Thus 356.8 - 7.5 = 349.3 mm; entrance/exit = 311.8/401.8 mm.
+source_to_center_mm = 356.8
 thickness_mm = 90.0
 round_tip_enabled = true
 tip_radius_mm = 170.0

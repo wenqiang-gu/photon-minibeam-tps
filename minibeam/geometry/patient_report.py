@@ -226,9 +226,9 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
             footer(fig);pdf.savefig(fig);plt.close(fig)
             for item in scene['beams']:
                 beam=item['beam']
-                fig=plt.figure(figsize=(14,10))
+                fig=plt.figure(figsize=(14,11))
                 fig.suptitle(f"Beam {item['index']} | Gantry {beam.gantry_angle:g} deg, couch {beam.couch_angle:g} deg",fontsize=16)
-                gs=fig.add_gridspec(2,3,height_ratios=[3,1],left=.065,right=.97,bottom=.08,top=.88,wspace=.3,hspace=.2)
+                gs=fig.add_gridspec(2,3,height_ratios=[2,2],left=.065,right=.97,bottom=.08,top=.88,wspace=.3,hspace=.2)
                 for k,(axes,title) in enumerate([((0,1),'Axial X-Y'),((0,2),'Coronal X-Z'),((1,2),'Sagittal Y-Z')]):
                     ax=fig.add_subplot(gs[0,k]);view2d(ax,[item],axes,slice_index=item['slice']['slice_index_1based'] if k==0 else None)
                     ax.set_title(title+' projection')
@@ -244,13 +244,16 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                     for key in ['mlc','jaws','aperture']:
                         cfg=head.config_for(beam).data[key]
                         if cfg['enabled'] and head.config_for(beam).data['assembly']['enabled']:
-                            label=f"{key.upper()}: source-center {cfg['source_to_center_mm']:g} mm; thickness {cfg['thickness_mm']:g} mm"
+                            label=f"{key.upper()}: source-to-body-center {cfg['source_to_center_mm']:g} mm; thickness {cfg['thickness_mm']:g} mm"
                             if key in ('mlc', 'jaws'):
                                 label += f"; envelope X/Y {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm"
                             lines.append(label)
                         else:
                             lines.append(f'{key.upper()}: disabled')
                     g, aperture, _, _ = head.resolved(beam)
+                    if hasattr(g, 'mlc_axial_reference'):
+                        from .mlc_jaws import mlc_axial_summary
+                        lines += mlc_axial_summary(g.mlc_axial_reference)
                     if hasattr(g, 'leaf_shape'):
                         from .mlc_shape import leaf_gap_summary
                         lines += leaf_gap_summary(g.leaf_shape)

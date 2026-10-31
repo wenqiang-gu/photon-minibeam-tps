@@ -34,8 +34,8 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
     try:
         with PdfPages(temporary,metadata={'Title':'Photon minibeam geometry','CreationDate':None}) as pdf:
             for index,beam in enumerate(stf.beams,1):
-                fig=plt.figure(figsize=(13,10),layout='constrained')
-                gs=fig.add_gridspec(3,2,height_ratios=(1,1,1.5))
+                fig=plt.figure(figsize=(13,12),layout='constrained')
+                gs=fig.add_gridspec(3,2,height_ratios=(1,1,2.3))
                 xz=fig.add_subplot(gs[0,:]); yz=fig.add_subplot(gs[1,:])
                 entrance=fig.add_subplot(gs[2,0]); info=fig.add_subplot(gs[2,1]);info.axis('off')
                 fig.suptitle(f'Photon minibeam geometry  |  Beam {index}\n'
@@ -106,8 +106,11 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                     for title,stage in [('MLC',g.mlc),('Jaws',g.lower_jaw)]:
                         if stage:
                             cfg=d['mlc' if title=='MLC' else 'jaws']
-                            lines += [f"{title} pair envelope X/Y: {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm", f'{title}: source-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
+                            lines += [f"{title} pair envelope X/Y: {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm", f'{title}: source-to-body-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
                             f'  Entrance / exit opening: {stage.entrance_opening:.3f} / {stage.exit_opening:.3f} mm']
+                    if hasattr(g, 'mlc_axial_reference'):
+                        from .mlc_jaws import mlc_axial_summary
+                        lines += mlc_axial_summary(g.mlc_axial_reference)
                     if hasattr(g, 'leaf_shape'):
                         from .mlc_shape import leaf_gap_summary
                         lines += leaf_gap_summary(g.leaf_shape)

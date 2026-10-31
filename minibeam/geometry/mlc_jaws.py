@@ -7,6 +7,16 @@ from dataclasses import dataclass
 from types import SimpleNamespace as Geometry
 import math
 
+
+def mlc_axial_summary(record):
+    """Label physical axial references identically for bank and leaf reports."""
+    lines = [f"MLC body center: {record['body_center_from_source_mm']:g} mm from source; "
+             f"entrance/exit: {record['entrance_from_source_mm']:g}/{record['exit_from_source_mm']:g} mm"]
+    center = record['tip_curvature_center_from_source_mm']
+    if center is not None:
+        lines.append(f"MLC tip-curvature center: {center:g} mm from source")
+    return lines
+
 @dataclass(frozen=True)
 class JawStage:
     axis: str
