@@ -54,10 +54,11 @@ enabled = true
 # Karl N. Sachse (2019), section 3.1.1.2.3, Table 3-15, p. 3-19 (PDF p. 83):
 # https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83
 # Published radius = 135 mm; offset derived as 467 - (432 + 77/2) = -3.5 mm.
-# Preserve our 470 mm midpoint: curvature center is 466.5 mm, not published 467 mm.
+# Reference body midpoint = 432 + 77/2 = 470.5 mm; curvature center = 467 mm.
+# With the 77 mm thickness and -3.5 mm offset, entrance/exit = 432/509 mm.
 # Material and outer dimensions remain our existing approximations.
-source_to_center_mm = 470.0
-thickness_mm = 40.0 # 77.0
+source_to_center_mm = 470.5
+thickness_mm = 77.0
 round_tip_enabled = true
 tip_radius_mm = 135.0
 tip_center_z_offset_mm = -3.5

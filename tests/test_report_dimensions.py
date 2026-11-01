@@ -9,7 +9,7 @@ from minibeam.geometry.patient_report import write_patient_geometry_report
 
 
 @pytest.mark.parametrize('model',['simple','leaves'])
-@pytest.mark.parametrize('thickness,expected',[(77.,431.5),(40.,450.)])
+@pytest.mark.parametrize('thickness,expected',[(77.,432.),(40.,450.5)])
 def test_entrance_reference(case,model,thickness,expected):
     geometry=BeamGeometry.from_config().replace(mlc={'model':model},jaws={'thickness_mm':thickness})
     head=TreatmentHead(geometry.as_config())

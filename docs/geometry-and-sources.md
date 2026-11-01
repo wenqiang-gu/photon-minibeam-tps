@@ -109,7 +109,7 @@ Native steering is enriched with immutable per-beam geometry. Attached snapshots
 authoritative for parameters, collisions, reports, manifests and MATLAB exports;
 preparation does not overwrite them by rereading TOML.
 
-The packaged reference has MLC **body center 356.8 mm**, jaws 470 mm and slit
+The packaged reference has MLC **body center 356.8 mm**, jaws 470.5 mm and slit
 center 707 mm from the source. Elekta's *Agility BLD* tutorial (2021), PDF pages
 9 and 17, places the MLC tip-curvature center at **349.3 mm**. With 90 mm
 thickness and the retained -7.5 mm offset, the entrance and exit are 311.8 and
@@ -277,10 +277,12 @@ files in either workflow.
 
 ### Curved Y diaphragms
 
-New packaged patient and water configurations enable rounded Y-jaw tips: radius
-135 mm, thickness 77 mm, and curvature-center offset −3.5 mm from the jaw body
-midpoint (negative means upstream). The retained source-to-midpoint distance is
-470 mm, placing the curvature center at 466.5 mm. Each field-edge ray is tangent
+Packaged patient and water configurations enable rounded Y-jaw tips: radius
+135 mm and curvature-center offset −3.5 mm from the jaw body midpoint (negative
+means upstream). The source-to-midpoint distance is 470.5 mm, placing the
+curvature center at 467 mm. Patient thickness remains 77 mm (entrance/exit
+432/509 mm); the water study retains 40 mm (450.5/490.5 mm), a thinner-body
+approximation rather than the published thickness. Each field-edge ray is tangent
 to the circular profile; the same 64-segment profile drives TOPAS, collision
 solids, and geometry reports. MLC geometry is unchanged.
 
@@ -288,8 +290,8 @@ Source: Karl N. Sachse (2019), *Development and validation of an electron Monte
 Carlo model for an Elekta Synergy linear accelerator*, §3.1.1.2.3, Table 3-15,
 printed page 3-19 / [PDF page 83](https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83).
 The radius is explicitly published; the offset is derived as
-`467 − (432 + 77/2) = −3.5 mm`. The published body's midpoint is 470.5 mm;
-our retained 470 mm placement is intentionally 0.5 mm upstream.
+`467 − (432 + 77/2) = −3.5 mm`. The configured body midpoint now matches the
+published 470.5 mm reference. Existing projects retain their saved placement.
 
 This is a uniform-thickness Agility-inspired approximation, not a complete EVO
 engineering model: the sculpted body, alloy, and outer dimensions have not been
