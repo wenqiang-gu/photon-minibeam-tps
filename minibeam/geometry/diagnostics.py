@@ -36,8 +36,10 @@ def material_solids(head, beam):
         points=extrude(np.asarray(leaf['polygon'])+[0,leaf['center_z']],0,leaf['y_half'])
         points[:,1]+=leaf['y_center']
         solids.append((leaf['name'],points))
+    for piece in getattr(g, 'jaw_shape', {}).get('pieces', []):
+        solids.append((piece['name'], np.asarray(piece['vertices_beam_mm'])))
     for axis, stage, name in [(0, g.mlc, 'MLC'), (1, g.lower_jaw, 'LowerJaw')]:
-        if stage is None:
+        if stage is None or (axis == 1 and hasattr(g, "jaw_shape")):
             continue
         outer = (g.mlc_outer_width if axis == 0 else g.jaw_outer_height)/2
         half = (g.mlc_outer_height if axis == 0 else g.jaw_outer_width)/2

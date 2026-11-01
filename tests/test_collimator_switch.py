@@ -79,7 +79,7 @@ def test_disabled_workflow_ignores_overrides_and_preserves_hardware(case,tmp_pat
         for job in m['jobs']:
             text=(root/job['parameter_file']).read_text()
             assert 'Ge/Collimator/' not in text and 'Ge/CollimatorAir/' not in text and 'Ge/Blade_' not in text
-            assert 'Ge/MLCPositive/' in text and 'Ge/LowerJawPositive/' in text
+            assert 'Ge/MLCPositive/' in text and 'Ge/LowerJawPositiveBase/' in text
         saved=loadmat(root/'derived/steering.mat',simplify_cells=True,variable_names=['beam_geometry'])
         assert all(not b['geometry']['aperture']['enabled'] for b in saved['beam_geometry'])
         fake_results(root)

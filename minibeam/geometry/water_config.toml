@@ -3,10 +3,13 @@
 enabled = true
 
 [field]
-# Full X/Y openings projected to isocenter; freely configurable, not target-fitted.
+# PROJECTED: full X/Y field openings at workflow reference plane, mm.
+# Patient: isocenter (SAD); water: entrance plane (SSD). Not the fixed jaw drawing reference.
 width_mm = 100.0
 height_mm = 100.0
+# MATERIAL: TOPAS material name shared by MLC and jaws.
 material = "G4_W"
+# PHYSICAL: minimum travel-axis material margin beyond the opening, mm.
 side_margin_mm = 10.0
 
 [mlc]
@@ -17,50 +20,80 @@ side_margin_mm = 10.0
 # This is distinct from the 90 micrometre gap between adjacent leaves.
 minimum_leaf_gap_mm = 1.0
 # Opt in to a static individual-leaf shape; default keeps continuous banks.
-model = "leaves" # two continuous blocks; "leaves" enables the CSV/RTPLAN shape
+model = "simple" # "simple": two continuous blocks; "leaves" enables the CSV/RTPLAN shape
+# SELECTOR (leaves only): CSV or DICOM RTPLAN; static shape applied to workflow beams.
 shape_source = "csv" # or "rtplan"
+# PATH (leaves only): relative to this TOML, or absolute; resolved during preparation.
 shape_file = "mlc_shape_example.csv" # relative to this TOML; absolute paths also work
+# IDENTIFIER (RTPLAN only): DICOM BeamNumber, not the workflow beam index.
 shape_beam_number = 1 # DICOM BeamNumber (RTPLAN only)
+# INDEX (RTPLAN only): zero-based control point, with inherited positions.
 shape_control_point_index = 0 # zero-based; inherited positions supported
+# PHYSICAL: rigid length of ONE leaf along beam X, mm; leaves model only.
 leaf_length_mm = 155.0 # approximate length from supplied Elekta leaf drawing
 
 # Fixed pair envelope X/Y, including opening; approximate continuous banks.
 # Motivated by leaf dimensions, not a verified manufacturer bank envelope.
+# PHYSICAL: full fixed pair envelope along beam X, including opening, mm; simple model.
 outer_width_mm = 310.0
+# PHYSICAL: full bank span along beam Y, mm; simple envelope; leaves also check transverse containment against this span.
 outer_height_mm = 160.0
+# Switch: include MLC geometry; independent of jaws and slit aperture.
 enabled = true
 # Axial body center, not tip-curvature center; all distances from source.
 # Elekta Agility BLD tutorial (2021), PDF pp. 9 and 17:
 # tip-curvature center = 349.3 mm; body center = 349.3 + (90/2 - 37.5).
 # Thus 356.8 - 7.5 = 349.3 mm; entrance/exit = 311.8/401.8 mm.
 source_to_center_mm = 356.8
+# PHYSICAL: MLC axial thickness along beam Z, mm; both models.
 thickness_mm = 90.0
+# Switch: use curved tips; both models. False uses flat-tip geometry.
 round_tip_enabled = true
+# PHYSICAL: leaf/bank tip radius in X/Z plane, mm; active for rounded tips.
 tip_radius_mm = 170.0
+# PHYSICAL SIGNED: tip-curvature center relative to body center, mm; negative is upstream.
 tip_center_z_offset_mm = -7.5
 
+
 [jaws]
-# Fixed pair envelope X/Y, including opening; user-estimated rectangular body.
-# Not manufacturer dimensions; sculpted Y-shaped body is deferred.
-outer_width_mm = 230.0
-outer_height_mm = 310.0
-enabled = true
-# Sculpted diaphragm reference: Elekta, "Collimation apparatus for radiotherapy",
-# US20100166150A1, Figures 5-7 (Y-shaped body and its shielding relationship to MLC leaves):
+# Agility-inspired approximation, not a verified EVO manufacturing model.
+# Elekta Agility BLD tutorial (2021), PDF pp. 11, 16, 66 and 70:
+# outline coordinates are approximate graph readings; 35 mm thin material and
+# the 350 mm rear endpoint are assumptions, not specified manufacturing dimensions.
+# US20100166150A1, Figures 5-7: the thick front band spans the FULL body width.
 # https://patents.google.com/patent/US20100166150A1/en
-# The current rectangular, uniform-thickness jaw does not implement that sculpting.
-# The patent is not the source of our estimated 230 x 310 mm pair envelope.
-# Agility-inspired uniform-thickness approximation, not the full sculpted EVO jaw.
-# Karl N. Sachse (2019), section 3.1.1.2.3, Table 3-15, p. 3-19 (PDF p. 83):
+# Native extruded pieces; MLC controller constraints behind the jaws are not modeled.
+model = "y_shaped" # "uniform": legacy fixed envelope with physical outer_width_mm/outer_height_mm
+# FIXED DRAWING REFERENCE: source-to-reference distance, mm; NOT workflow SAD/SSD.
+# Physical dimensions = projected drawing dimensions * source_to_center_mm / this distance.
+outline_reference_distance_mm = 1000.0
+# PROJECTED: [distance behind nominal radiation edge along jaw travel, X half-width], mm.
+# One jaw: first half-width defines full body width; final distance defines its length.
+# Negative jaw mirrors this shape. The thin base retains the full width behind the front.
+outline_points_mm = [
+    [0.0, 205.0],   # full-width front
+    [30.0, 205.0],  # taper begins
+    [210.0, 30.0],  # taper ends; narrow spine begins
+    [350.0, 30.0],  # rear endpoint
+]
+# PHYSICAL: upstream thin-base axial thickness, mm; never projected.
+thin_region_thickness_mm = 35.0
+# Published curved-tip dimensions: Karl N. Sachse (2019), section 3.1.1.2.3,
+# Table 3-15, p. 3-19 (PDF p. 83):
 # https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83
-# Published radius = 135 mm; offset derived as 467 - (432 + 77/2) = -3.5 mm.
-# Reference body midpoint = 432 + 77/2 = 470.5 mm; curvature center = 467 mm.
-# With the 77 mm thickness and -3.5 mm offset, entrance/exit = 432/509 mm.
-# Material and outer dimensions remain our existing approximations.
+# At body center 470.5 and thickness 77: entrance/exit 432/509 mm;
+# curvature center = 470.5 - 3.5 = 467 mm. Thin base (35 mm): 432-467 mm.
+# Switch: include these jaws; independent of the MLC and slit aperture.
+enabled = true
+# PHYSICAL AXIAL: source to body midpoint along beam Z, mm (not curvature center).
 source_to_center_mm = 470.5
+# PHYSICAL: total axial thickness in the thick regions, mm.
 thickness_mm = 77.0
+# Switch: rounded tangent tip; false uses the existing focused flat face.
 round_tip_enabled = true
+# PHYSICAL: radius of the field-defining tip in the Y/Z plane, mm.
 tip_radius_mm = 135.0
+# PHYSICAL SIGNED: curvature center relative to body center, mm; negative is upstream.
 tip_center_z_offset_mm = -3.5
 
 [aperture]

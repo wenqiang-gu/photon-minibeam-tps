@@ -24,12 +24,13 @@ def serializable(value):
 
 
 def resolve(config,sad):
+    config.validate()
     data=config.data; field=data['field']
     if not math.isfinite(sad) or sad<=0:raise ValueError('Beam SAD must be positive')
     g=SimpleNamespace(source_z=-sad,mlc_outer_width=data['mlc']['outer_width_mm'],
         mlc_outer_height=data['mlc']['outer_height_mm'],
-        jaw_outer_width=data['jaws']['outer_width_mm'],
-        jaw_outer_height=data['jaws']['outer_height_mm'],field_aperture_material=field['material'],
+        jaw_outer_width=data['jaws'].get('outer_width_mm'),
+        jaw_outer_height=data['jaws'].get('outer_height_mm'),field_aperture_material=field['material'],
         mlc=None,lower_jaw=None,mlc_round_tip=None,mlc_round_tip_enabled=data['mlc']['round_tip_enabled'],
         jaw_round_tip=None,jaw_round_tip_enabled=data['jaws']['round_tip_enabled'])
     envelopes=[]; texts=[]; stages=[]
@@ -80,6 +81,15 @@ def resolve(config,sad):
             else:g.jaw_round_tip=tip
         if key=='mlc':g.mlc=stage
         else:g.lower_jaw=stage
+        if key == 'jaws' and c['model'] == 'y_shaped':
+            from .y_jaws import resolve_y_jaws, render_y_jaws
+            g.jaw_shape = resolve_y_jaws(g, c, field, sad)
+            lo, hi = np.asarray(g.jaw_shape['bounds_beam_mm'])
+            envelopes.append(dict(name='jaws', center=((lo+hi)/2).tolist(),
+                                  half_size=((hi-lo)/2).tolist(), rotation=np.eye(3).tolist()))
+            stages.append((key, stage.entrance_z, stage.exit_z))
+            texts.append(render_y_jaws(g.jaw_shape, field['material']))
+            continue
         outer=c['outer_width_mm'] if axis=='X' else c['outer_height_mm']
         if max(stage.entrance_opening,stage.exit_opening)+2*field['side_margin_mm']>=outer:
             raise ValueError(f'{key} opening exceeds outer dimensions/side margin')

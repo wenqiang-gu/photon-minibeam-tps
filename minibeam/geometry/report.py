@@ -131,7 +131,7 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                         w=field['width_mm'] if axis==0 else field['height_mm']
                         for sign in [-1,1]:ax.plot([-beam.sad,0],[0,sign*w/2],color='#db8d2b',lw=.9,ls='--')
                         stage=g.mlc if axis==0 else g.lower_jaw
-                        if stage:
+                        if stage and not (axis == 1 and hasattr(g, "jaw_shape")):
                             for sign in [-1,1]:
                                 if (g.mlc_round_tip if axis==0 else g.jaw_round_tip) is not None:
                                     shape=np.asarray(_rounded_bank_polygon(g,sign>0,axis='XY'[axis]))
@@ -142,6 +142,13 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                                         [stage.entrance_z,sign*outer],[stage.exit_z,sign*outer],
                                         [stage.exit_z,sign*stage.exit_opening/2]])
                                 ax.add_patch(Polygon(points,fc='#718299',ec='#374b60',lw=.6))
+                    if g and hasattr(g, 'jaw_shape'):
+                        from scipy.spatial import ConvexHull
+                        for piece in g.jaw_shape['pieces']:
+                            points = np.asarray(piece['vertices_beam_mm'])[:, [2, axis]]
+                            ax.add_patch(Polygon(points[ConvexHull(points).vertices],
+                                fc='#cbd5df' if piece['name'].endswith('Base') else '#bd8549',
+                                ec='#5b4530', lw=.4, alpha=.55))
                     if g and hasattr(g, 'leaf_shape'):
                         from .diagnostics import material_solids
                         from scipy.spatial import ConvexHull
@@ -178,7 +185,12 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                     for title,stage in [('MLC',g.mlc),('Jaws',g.lower_jaw)]:
                         if stage:
                             cfg=d['mlc' if title=='MLC' else 'jaws']
-                            lines += [f"{title} pair envelope X/Y: {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm", f'{title}: source-to-body-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
+                            if title == 'Jaws' and hasattr(g, 'jaw_shape'):
+                                from .y_jaws import jaw_shape_summary
+                                lines += [jaw_shape_summary(g.jaw_shape)[0], '  Thin/base geometry and fixed reference: see jaw detail page.']
+                            else:
+                                lines += [f"{title} pair envelope X/Y: {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm"]
+                            lines += [f'{title}: source-to-body-center {stage.source_to_center:g} mm; thickness {stage.thickness:g} mm',
                             f'  Entrance / exit opening: {stage.entrance_opening:.3f} / {stage.exit_opening:.3f} mm']
                     if hasattr(g, 'mlc_axial_reference'):
                         from .mlc_jaws import mlc_axial_summary
@@ -195,13 +207,17 @@ def write_geometry_report(ct, stf, head, path, diagnostics=None):
                         lines += [f'Jaw tip: radius {tip.radius:g} mm; offset {tip.center_z_offset:g} mm',
                                   f'  Curvature center Z: {tip.circle_center_z + beam.sad:.3f} mm from source',
                                   f'  Tangent (Y,Z): ({tip.tangent_x:.3f}, {tip.tangent_z:.3f}) mm',
-                                  'Jaws: uniform-thickness Agility approximation; no sculpted body.']
+                                  'Jaws: sculpted approximation.' if hasattr(g, 'jaw_shape') else 'Jaws: uniform-thickness approximation.']
                     if ap:
                         lines += APERTURE_TYPES[head.config_for(beam).data['aperture']['type']].summary(ap)
                     lines += ['MLC: individual rigid leaves (approximate sides and tip calibration).' if hasattr(g,'leaf_shape') else 'MLC is a two-bank approximation, not individual leaves.']
                 else:lines += ['Configured assembly disabled.']
-                info.text(0,1,'\n'.join(lines),va='top',fontsize=8.5,linespacing=1.35,family='DejaVu Sans')
+                info.text(0,1,'\n'.join(lines),va='top',fontsize=7.5 if g and hasattr(g, 'jaw_shape') else 8.5,
+                          linespacing=1.15 if g and hasattr(g, 'jaw_shape') else 1.35,family='DejaVu Sans')
                 pdf.savefig(fig);plt.close(fig)
+                if g and hasattr(g, 'jaw_shape'):
+                    from .y_jaws import write_jaw_detail_page
+                    write_jaw_detail_page(pdf, g.jaw_shape, beam.sad, index)
                 if diagnostics is not None:
                     record = diagnostics[index-1]
                     fig, ax = plt.subplots(figsize=(13,10),layout='constrained')

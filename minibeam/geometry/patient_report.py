@@ -256,12 +256,15 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                         cfg=head.config_for(beam).data[key]
                         if cfg['enabled'] and head.config_for(beam).data['assembly']['enabled']:
                             label=f"{key.upper()}: source-to-body-center {cfg['source_to_center_mm']:g} mm; thickness {cfg['thickness_mm']:g} mm"
-                            if key in ('mlc', 'jaws'):
+                            if key in ('mlc', 'jaws') and 'outer_width_mm' in cfg:
                                 label += f"; envelope X/Y {cfg['outer_width_mm']:g} x {cfg['outer_height_mm']:g} mm"
                             lines.append(label)
                         else:
                             lines.append(f'{key.upper()}: disabled')
                     g, aperture, _, _ = head.resolved(beam)
+                    if hasattr(g, 'jaw_shape'):
+                        from .y_jaws import jaw_shape_summary
+                        lines += jaw_shape_summary(g.jaw_shape)
                     if hasattr(g, 'mlc_axial_reference'):
                         from .mlc_jaws import mlc_axial_summary
                         lines += mlc_axial_summary(g.mlc_axial_reference)
@@ -273,7 +276,7 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                         lines += [f'Jaw tip radius {tip.radius:g} mm; axial offset {tip.center_z_offset:g} mm',
                                   f'Jaw curvature center: {tip.circle_center_z + beam.sad:.3f} mm from source; tangent Y/Z: {tip.tangent_y:.3f}/{tip.tangent_z:.3f} mm',
                                   f'Jaw entrance/exit opening: {g.lower_jaw.entrance_opening:.3f}/{g.lower_jaw.exit_opening:.3f} mm',
-                                  'Uniform-thickness Agility approximation; sculpted body not modeled.']
+                                  'Sculpted Agility approximation.' if hasattr(g, 'jaw_shape') else 'Uniform-thickness Agility approximation.']
                     if aperture:
                         pitches = aperture.entrance_slit_ctcs
                         lines.append(f"Slits: width {min(aperture.entrance_slit_widths):g} mm; nominal CTC {aperture.nominal_entrance_ctc_mm:g} mm; shift across slits {aperture.lateral_shift_mm:g} mm")
@@ -283,6 +286,9 @@ def write_patient_geometry_report(ct, cst, stf, head, path, *, target_names=(), 
                 else:lines.append('No configured treatment head shown; custom geometry is not rendered.')
                 ax.text(0,1,'\n'.join(lines),va='top',fontsize=9,linespacing=1.25)
                 footer(fig);pdf.savefig(fig);plt.close(fig)
+                if head and hasattr(g, 'jaw_shape'):
+                    from .y_jaws import write_jaw_detail_page
+                    write_jaw_detail_page(pdf, g.jaw_shape, beam.sad, item['index'])
                 if diagnostics is not None:
                     record=diagnostics[item['index']-1]
                     lines=['Intersections are with the CT transport box, not necessarily tissue.',

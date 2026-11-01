@@ -67,6 +67,7 @@ class GeometryConfig:
             data['aperture'].setdefault('lateral_shift_mm', 0.0)
             data['aperture'].setdefault('rotation_z_deg', 0.0)
         if isinstance(data.get('jaws'), dict):
+            data['jaws'].setdefault('model', 'uniform')
             data['jaws'].setdefault('round_tip_enabled', False)
             data['jaws'].setdefault('tip_radius_mm', 135.0)
             data['jaws'].setdefault('tip_center_z_offset_mm', -3.5)
@@ -94,6 +95,12 @@ class GeometryConfig:
             raise ValueError('Unknown aperture.type; currently supported: ' + ', '.join(APERTURE_TYPES))
         aperture_type=APERTURE_TYPES[data['aperture']['type']]
         allowed['mlc'] |= {'model','shape_source','shape_file','shape_beam_number','shape_control_point_index','leaf_length_mm','minimum_leaf_gap_mm'}
+        allowed['jaws'].add('model')
+        if data['jaws'].get('model') == 'y_shaped':
+            if {'outer_width_mm','outer_height_mm'} & data['jaws'].keys():
+                raise ValueError('Y-shaped jaws derive dimensions from outline_points_mm; remove legacy outer_width_mm/outer_height_mm')
+            allowed['jaws'] -= {'outer_width_mm','outer_height_mm'}
+            allowed['jaws'] |= {'outline_reference_distance_mm','outline_points_mm','thin_region_thickness_mm'}
         allowed['aperture']=aperture_type.config_keys
         for section, keys in allowed.items():
             table=data[section]
@@ -103,7 +110,7 @@ class GeometryConfig:
                 if key in {'model','shape_source','shape_file'}:
                     if not isinstance(value,str): raise ValueError(f'{key} must be a string')
                     if key=='shape_file' and not value.strip(): raise ValueError('shape_file must be a nonempty file path')
-                    if key=='model' and value not in {'simple','banks','leaves'}: raise ValueError('Unknown MLC model')
+                    if key=='model' and value not in ({'simple','banks','leaves'} if section=='mlc' else {'uniform','y_shaped'}): raise ValueError(f'Unknown {section} model')
                     if key=='shape_source' and value not in {'csv','rtplan'}: raise ValueError('Unknown MLC shape source')
                 elif key in {'shape_beam_number','shape_control_point_index'}:
                     if type(value) is not int or value<0: raise ValueError(f'{key} must be a nonnegative integer')
@@ -112,11 +119,14 @@ class GeometryConfig:
                 elif key == 'material':
                     if not isinstance(value,str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]*',value):
                         raise ValueError(f'{section}.material must be a TOPAS material name')
-                elif key == 'type': pass
+                elif key in {'type','outline_points_mm'}: pass
                 else:
                     if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):
                         raise ValueError(f'{section}.{key} must be finite numeric')
                     signed = key.startswith('rotation_') or key in {'tip_center_z_offset_mm', 'lateral_shift_mm'}
                     if not signed and (value < 0 or (value == 0 and key not in {'side_margin_mm','minimum_leaf_gap_mm'})):
                         raise ValueError(f'{section}.{key} must be positive')
+        if data['jaws']['model'] == 'y_shaped':
+            from .y_jaws import validate_outline
+            validate_outline(data['jaws'])
         aperture_type.validate_config(data['aperture'])

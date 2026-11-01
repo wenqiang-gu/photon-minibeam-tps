@@ -275,54 +275,133 @@ for configuration, illustrations, normalization and use of the generated IAEA
 files in either workflow.
 
 
-### Curved Y diaphragms
+### Native Y-shaped diaphragms
 
-Packaged patient and water configurations enable rounded Y-jaw tips: radius
-135 mm and curvature-center offset −3.5 mm from the jaw body midpoint (negative
-means upstream). The source-to-midpoint distance is 470.5 mm, placing the
-curvature center at 467 mm. Patient thickness remains 77 mm (entrance/exit
-432/509 mm); the water study retains 40 mm (450.5/490.5 mm), a thinner-body
-approximation rather than the published thickness. Each field-edge ray is tangent
-to the circular profile; the same 64-segment profile drives TOPAS, collision
-solids, and geometry reports. MLC geometry is unchanged.
+Both packaged TOMLs select `[jaws].model = "y_shaped"`. The rounded front band
+spans the **full body width**. A thin upstream base remains beside the taper and
+rear spine. This is an Agility-inspired approximation, not a verified EVO
+manufacturing model. Eight non-overlapping native `G4ExtrudedSolid` pieces (four
+per jaw at the default thickness) represent the base, front, shoulders and spine;
+no STL files or custom TOPAS extension are required.
 
-Source: Karl N. Sachse (2019), *Development and validation of an electron Monte
-Carlo model for an Elekta Synergy linear accelerator*, §3.1.1.2.3, Table 3-15,
-printed page 3-19 / [PDF page 83](https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83).
-The radius is explicitly published; the offset is derived as
-`467 − (432 + 77/2) = −3.5 mm`. The configured body midpoint now matches the
-published 470.5 mm reference. Existing projects retain their saved placement.
+```toml
+[jaws]
+model = "y_shaped"
+outline_reference_distance_mm = 1000.0
+outline_points_mm = [
+    [0.0,   205.0], # full-width front
+    [30.0,  205.0], # taper begins
+    [210.0,  30.0], # narrow spine begins
+    [350.0,  30.0], # rear endpoint
+]
+thin_region_thickness_mm = 35.0
+# Retain enabled, source_to_center_mm, thickness_mm and tip settings.
+```
 
-This is a uniform-thickness Agility-inspired approximation, not a complete EVO
-engineering model: the sculpted body, alloy, and outer dimensions have not been
-reconstructed from manufacturer drawings. The existing `G4_W` material remains.
-Set `[jaws].round_tip_enabled = false` for the flat focused-jaw model. Configurations
-and saved snapshots without the new keys retain flat jaws. Existing projects and
-saved-only collection are unchanged; prepare a fresh project for curved jaws.
+Each point is `[distance behind nominal radiation edge, thick-region half-width]`
+at the **fixed drawing reference distance**, not the current beam SAD/SSD.
+The front half-width defines the full body width; the final distance defines the
+nominal length of one jaw. The thin base retains that full width to the rear.
+No separate outer width, height or length is accepted for `y_shaped`.
 
-### Independent MLC and jaw body envelopes
+Physical drawing dimensions equal projected dimensions multiplied by
+`source_to_center_mm / outline_reference_distance_mm`. At 470.5/1000:
+`2 × 205 = 410 mm` projected width becomes **192.905 mm** physical width;
+350 mm projected nominal length becomes **164.675 mm**. Treatment SAD/SSD changes
+tip tangency and the nominal opening, but does not resize these hardware dimensions.
+Changing the body-center distance or the drawing reference explicitly changes the
+outline's physical magnification. The rear boundary follows the nominal field edge,
+not a fixed pair envelope; curved-front material lengths vary through the thickness.
 
-New configurations put `outer_width_mm` (beam X) and `outer_height_mm` (beam Y)
-inside `[mlc]` and `[jaws]`, rather than `[field]`. Packaged defaults are
-310 × 160 mm for the MLC and 230 × 310 mm for the jaws. Each is the **full
-pair envelope including its central opening**, not the dimensions of one bank.
-These are approximate continuous-bank bodies: the MLC envelope is motivated by
-leaf dimensions; the jaw envelope is user-estimated, not a manufacturer drawing.
-Individual leaves, tapered leaf widths and the sculpted Y-shaped diaphragm are
-not represented.
+The total physical thickness is 77 mm in both packaged configurations. At the
+470.5 mm body midpoint the entrance/exit distances are **432/509 mm**. The
+35 mm upstream base ends at **467 mm**. Radius 135 mm and offset -3.5 mm place
+the tip-curvature center at 467 mm. A common 64-segment front profile is split at
+the base interface without changing its surface. TOPAS, collision diagnostics and
+reports consume the same convex-piece vertices. Reports include a dedicated jaw
+page showing projections and a rear-spine section.
 
-The outer edges remain fixed while the inner faces change with the projected
-field opening. This is not rigid translation of fixed-length leaves. Thickness,
-axial placement, tip radius and curvature offset remain independently configured.
-`[field].width_mm` and `height_mm` still specify the opening at the reference
-plane; its shared material and travel-axis side margin remain unchanged.
+Sources and assumptions:
 
-Legacy shared outer dimensions are accepted and assigned to both devices in
-memory. Do not mix legacy shared dimensions with device-specific dimensions.
-Existing saved projects and their hashes remain unchanged; use a fresh project
-when preparing the new geometry. A smaller body can expose paths previously
-blocked by the approximation, so compare transport results before adopting it
-as a model of the measured machine.
+- Elekta *Agility BLD* tutorial (2021), PDF pages 11, 16, 66 and 70: rounded-tip
+  dimensions and projected diaphragm outline. The four coordinates above are
+  approximate graph readings. The 350 mm graph endpoint does **not** establish
+  the manufactured jaw length; we adopt it as a configurable assumption.
+- The 35 mm thin thickness and upstream placement are interpretations of page 16,
+  not a confirmed side-region specification. They are independently configurable.
+- [Elekta patent US20100166150A1, Figures 5–7](https://patents.google.com/patent/US20100166150A1/en)
+  explicitly describes a thick front edge across the full diaphragm width. Its
+  preferred 20 mm thin-region example is not a confirmed production Agility dimension.
+- Karl N. Sachse (2019), *Development and validation of an electron Monte Carlo
+  model for an Elekta Synergy linear accelerator*, §3.1.1.2.3, Table 3-15,
+  [PDF page 83](https://scholar.ufs.ac.za/bitstreams/ecf5466d-0410-4e41-8194-c11ac02b5f56/download#page=83):
+  radius 135 mm; offset derived as `467 - (432 + 77/2) = -3.5 mm`.
+
+The material remains `G4_W`. This does not implement the alloy, Agility radiation-edge
+calibration or automatic MLC constraints behind thin regions. MLC positions are
+unchanged: a thin region without leaf shielding can transmit radiation. Compare
+transport before treating this approximation as a model of the measured machine.
+
+### MLC and jaw parameter conventions
+
+Beam X is MLC travel; beam Y is jaw travel; beam Z points downstream. Physical
+lengths below are millimeters. The workflow field reference is the patient
+isocenter or the water entrance plane. It is distinct from the fixed jaw drawing
+reference.
+
+| Setting | Meaning and applicability |
+|---|---|
+| `[field].width_mm`, `height_mm` | Full **projected** X/Y opening at workflow SAD/SSD; not hardware body dimensions. Water `FIELD_SIZE_MM` overrides both. |
+| `[field].material` | TOPAS material name for MLC and jaws. |
+| `[field].side_margin_mm` | **Physical** minimum travel-axis material margin beyond the opening; no automatic body enlargement. |
+| `enabled` | Include this device independently of other devices; the assembly switch must also be enabled. |
+| `source_to_center_mm` | **Physical axial source distance** to the body midpoint, not tip-curvature center. |
+| `thickness_mm` | **Physical** axial body thickness; for Y jaws, total thickness of thick regions. |
+| `round_tip_enabled` | Rounded-tip tangency versus the existing flat-tip construction. |
+| `tip_radius_mm` | **Physical** radius in the travel/Z plane; active with rounded tips. |
+| `tip_center_z_offset_mm` | **Physical signed** curvature-center offset from body center; negative is upstream. |
+| MLC `model` | `simple`: two continuous banks; `leaves`: rigid individual leaves. Legacy `banks` aliases `simple`. |
+| MLC `outer_width_mm` | **Physical full pair-envelope X width**, including opening, for `simple`; does not truncate rigid translating leaves. |
+| MLC `outer_height_mm` | **Physical full Y span** for `simple`; also the transverse containment limit for `leaves`. |
+| `leaf_length_mm` | **Physical** rigid length of one individual leaf along X; `leaves` only. |
+| `minimum_leaf_gap_mm` | **Physical** minimum opposing-tip separation at the bank, not projected and not an interleaf gap; `leaves` only. |
+| `shape_source`, `shape_file` | Static CSV/RTPLAN selection and path for `leaves`; relative paths resolve against the TOML. |
+| `shape_beam_number` | RTPLAN DICOM BeamNumber identifier, not workflow beam order. |
+| `shape_control_point_index` | Zero-based RTPLAN control-point index; positions may be inherited. |
+| Jaw `model` | `y_shaped`: sculpted native pieces; `uniform`: legacy fixed-envelope banks. |
+| Jaw `outer_width_mm`, `outer_height_mm` | **Physical full pair-envelope X/Y dimensions**, including opening; `uniform` only. |
+| `outline_reference_distance_mm` | **Fixed source-to-drawing-plane distance**, independent of workflow SAD/SSD; `y_shaped` only. |
+| `outline_points_mm` | **Projected** `[rearward distance, X half-width]` at that fixed plane. Full width is twice the first half-width; last distance sets nominal per-jaw length. |
+| `thin_region_thickness_mm` | **Physical** upstream axial thickness, not projected; `y_shaped` only. |
+
+CSV offsets are nominal **reference-plane mm**, while its bank positions and field
+sizes are **reference-plane cm**. RTPLAN MLCX boundaries/positions are nominal
+**reference-plane mm**. Neither supplies physical tungsten-tip coordinates or a
+verified radiation-edge calibration. Leaf widths are projected to the MLC plane;
+rigid leaf length, thickness, radius and enforced tip gap remain physical.
+
+### Uniform and legacy geometry
+
+For an explicit uniform jaw, remove the three Y-shape settings and provide:
+
+```toml
+model = "uniform"
+outer_width_mm = 230.0
+outer_height_mm = 310.0
+# Retain enabled, placement, total thickness and tip settings.
+```
+
+These are fixed **pair envelopes including the opening**, not one jaw's length.
+Their outer edges stay fixed as the opening changes. Packaged MLC simple banks
+retain their approximate 310 × 160 mm envelope. These envelope estimates are not
+verified manufacturer dimensions.
+
+Older configurations missing the jaw model retain uniform behavior; missing
+rounded-tip options retain flat jaws. Shared legacy `[field].outer_*` dimensions
+still migrate to both devices; mixed shared/device dimensions are rejected.
+Do not combine Y-outline settings with legacy jaw outer dimensions. Saved projects,
+inputs and hashes are not rewritten. Use fresh projects after changing geometry;
+collection and forward reconstruction continue to use saved data independently.
 
 ## Static individual MLC leaves
 

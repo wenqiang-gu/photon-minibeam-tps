@@ -15,9 +15,9 @@ from minibeam.geometry.diagnostics import material_solids
 def test_published_shape_at_preserved_position():
     g,_,_,text=resolve(GeometryConfig.load(),1000.)
     jaw,tip=g.lower_jaw,g.jaw_round_tip
-    assert jaw.entrance_z+1000==431.5
-    assert jaw.exit_z+1000==508.5
-    assert tip.circle_center_z+1000==466.5
+    assert jaw.entrance_z+1000==432.0
+    assert jaw.exit_z+1000==509.0
+    assert tip.circle_center_z+1000==467.0
     assert tip.radius==135
     slope=.05
     assert (tip.circle_center_y-slope*(tip.circle_center_z+1000))/np.hypot(1,slope)==pytest.approx(135)

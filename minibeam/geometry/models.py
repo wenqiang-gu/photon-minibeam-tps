@@ -1,6 +1,6 @@
 """Immutable, validated hardware snapshots attached to native steering beams."""
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
 from .configuration import GeometryConfig, normalize_body_dimensions
 
 
@@ -48,8 +48,40 @@ class MLCGeometry(FrozenGeometry):
 
 
 class JawGeometry(FrozenGeometry):
-    outer_width_mm: float = Field(gt=0)
-    outer_height_mm: float = Field(gt=0)
+    @model_serializer(mode='wrap')
+    def serialize_geometry(self, handler):
+        # Keep saved JSON/MATLAB snapshots free of inactive None fields. Tuple
+        # storage enforces immutability; the interchange representation is arrays.
+        data = {k: v for k, v in handler(self).items() if v is not None}
+        if 'outline_points_mm' in data:
+            data['outline_points_mm'] = [list(point) for point in data['outline_points_mm']]
+        return data
+
+    model: Literal["uniform", "y_shaped"] = "uniform"
+    outer_width_mm: float | None = Field(default=None, gt=0)
+    outer_height_mm: float | None = Field(default=None, gt=0)
+    outline_reference_distance_mm: float | None = Field(default=None, gt=0)
+    outline_points_mm: tuple[tuple[float, float], ...] | None = None
+    thin_region_thickness_mm: float | None = Field(default=None, gt=0)
+
+    @field_validator('outline_points_mm', mode='before')
+    @classmethod
+    def immutable_outline(cls, value):
+        if value is None:
+            return value
+        # Validate raw values before Pydantic can coerce Booleans into floats.
+        from .y_jaws import validate_outline
+        validate_outline(dict(outline_points_mm=value, thin_region_thickness_mm=1, thickness_mm=1))
+        return tuple(tuple(float(v) for v in point) for point in value)
+
+    @field_validator('outer_width_mm', 'outer_height_mm', 'outline_reference_distance_mm',
+                     'thin_region_thickness_mm', 'source_to_center_mm', 'thickness_mm',
+                     'tip_radius_mm', 'tip_center_z_offset_mm', mode='before')
+    @classmethod
+    def numeric_dimensions(cls, value):
+        if isinstance(value, bool):
+            raise ValueError('Jaw dimensions must be numeric, not Boolean')
+        return value
     enabled: bool
     source_to_center_mm: float = Field(gt=0)
     thickness_mm: float = Field(gt=0)
@@ -103,4 +135,4 @@ class BeamGeometry(FrozenGeometry):
         return cls.model_validate((config or GeometryConfig.load()).data)
 
     def as_config(self):
-        return GeometryConfig.from_data(self.model_dump())
+        return GeometryConfig.from_data(self.model_dump(exclude_none=True))

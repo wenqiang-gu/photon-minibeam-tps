@@ -50,6 +50,22 @@ def _matlab_empty_cells(value):
     return np.empty((0, 0)) if value is None else value
 
 
+def _same_geometry_snapshot(actual, expected):
+    """Exact saved-value comparison, including MATLAB numeric outline arrays.
+
+    scipy simplifies numeric nested lists into ndarrays. Do not invoke dict's
+    scalar equality on those arrays or reconstruct geometry using today's defaults.
+    """
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and actual.keys() == expected.keys() and all(
+            _same_geometry_snapshot(actual[key], value) for key, value in expected.items())
+    if expected is None:
+        return actual is None or np.asarray(actual).size == 0
+    if isinstance(expected, (list, tuple)):
+        return np.array_equal(np.asarray(actual).squeeze(), np.asarray(expected).squeeze())
+    return bool(np.array_equal(actual, expected))
+
+
 def planning_snapshot(root, manifest):
     path = root/'derived/steering.mat'
     receipt = root/'derived/planning_snapshot.json'
@@ -149,7 +165,7 @@ def planning_snapshot(root, manifest):
     if manifest.get('beam_geometry'):
 
         geometry = _items(data.get('beam_geometry', []))
-        if len(geometry) != len(saved) or any(g['configuration_sha256'] != s['configuration_sha256'] or g['beam_index'] != s['beam_index'] or g['geometry'] != s['geometry'] for g,s in zip(geometry,manifest['beam_geometry'])):
+        if len(geometry) != len(saved) or any(g['configuration_sha256'] != s['configuration_sha256'] or g['beam_index'] != s['beam_index'] or not _same_geometry_snapshot(g['geometry'], s['geometry']) for g,s in zip(geometry,manifest['beam_geometry'])):
             raise ValueError('Planning snapshot beam geometry mismatch')
     del data
     # Preserve native MATLAB cell/struct shapes rather than reserializing squeezed data.

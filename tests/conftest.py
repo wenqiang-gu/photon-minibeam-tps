@@ -62,6 +62,14 @@ def dicom_series(tmp_path):
 @pytest.fixture(autouse=True)
 def reference_hardware_settings(request, monkeypatch):
     """Hardware regressions use a frozen reference, never editable patient settings."""
+    if request.module.__name__.split('.')[-1] in {'test_curved_jaws', 'test_device_dimensions'}:
+        from pathlib import Path
+        from minibeam.geometry.configuration import GeometryConfig
+        reference=Path(__file__).parent/'fixtures/uniform_geometry.toml'
+        original=GeometryConfig.load.__func__
+        monkeypatch.setattr(GeometryConfig,'load',classmethod(
+            lambda cls,path=None: original(cls,reference if path is None else path)))
+        return
     if request.module.__name__.split('.')[-1] not in {
             'test_hardware', 'test_collision_diagnostics', 'test_patient_report', 'test_workflows'}:
         return
