@@ -9,6 +9,12 @@ file_bases = [
 output_dir = "../outputs/modified_phase_space1"
 seed = 12345 # Modification seed, independent of TOPAS transport seeds.
 
+# Source-to-output-plane distance, mm; applies to every variant and species.
+# 272.1 preserves the original plane. Smaller values move it upstream.
+# Positions follow the final particle trajectories AFTER focal-spread rotation.
+# This is geometric relocation, not transport through upstream material.
+output_plane_distance_mm = 200.0
+
 # Spectrum weights are unchanged through 0.1 MeV, transition smoothly to
 # the model ratio at 0.2 MeV, and preserve the protected 511 keV band.
 # No source spread is added unless you explicitly configure a positive sigma.
@@ -23,10 +29,10 @@ seed = 12345 # Modification seed, independent of TOPAS transport seeds.
 # source_sigma_x_mm = 0.0
 # source_sigma_y_mm = 0.0
 
-[variants.focal_spread_2mm]
+[variants.focal_spread_2mm_dis200mm]
 spectrum = "baseline"
 source_sigma_x_mm = 2.0 # Example only; effective spread ADDED at source plane.
-source_sigma_y_mm = 2.0 # Phase-space positions remain fixed.
+source_sigma_y_mm = 2.0 # Positions stay fixed unless output plane changes.
 
 # [variants.joint_example]
 # spectrum = "peak_plus_0p1"

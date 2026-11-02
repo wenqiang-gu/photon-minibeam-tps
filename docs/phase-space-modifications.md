@@ -1,8 +1,8 @@
 # Phase-space energy and effective source-width modifications
 
 The standalone [`tools/modify_phsp.py`](../tools/modify_phsp.py) modifier creates
-reusable IAEA sources before field/bixel selection. It supports only model-13 spectrum reweighting and Gaussian effective
-source width, independently or together. It does not run TOPAS or alter your
+reusable IAEA sources before field/bixel selection. It supports model-13 spectrum reweighting, Gaussian effective
+source width, and trajectory-preserving plane relocation. It does not run TOPAS or alter your
 original files. Configure variants in
 [`tools/modify_phsp.toml`](../tools/modify_phsp.toml); the numerical implementation
 is in [`tools/phsp_modifications.py`](../tools/phsp_modifications.py).
@@ -32,13 +32,14 @@ Dry-run checks configuration and headers and estimates particle-file disk usage;
 it does **not** scan or fully validate particle records. A normal run validates
 all records. Relative configuration paths are relative to the TOML file, not
 the working directory; `~` is expanded. Choose a new output directory each time.
-The default configuration enables the two energy variants, with zero added
-source spread. Each variant writes a full copy of all input particle files.
+The enabled variants are selected explicitly in the TOML. Each variant writes
+a full copy of all input particle files.
 
 ```toml
 file_bases = ["/path/original_part1", "/path/original_part2"]
 output_dir = "/path/modified_sources"
 seed = 12345
+output_plane_distance_mm = 272.1
 
 [variants.energy_low]
 spectrum = "peak_minus_0p1"
@@ -76,6 +77,45 @@ Two streaming passes keep memory bounded: first validate and calculate global
 fluence corrections for all variants, then write them together. Output is
 staged and published only on success. Inputs are checked again during the second
 pass. Disk use scales with the number of variants; this is not an in-place edit.
+
+## Move the recorded plane
+
+The top-level `output_plane_distance_mm` applies to all variants. Its default,
+including when omitted, is **272.1 mm from the nominal source**. Use, for example,
+`output_plane_distance_mm = 200.0` to move the original plane upstream. Values
+must be finite and positive; Boolean values are rejected.
+
+Focal-spread rotation is evaluated at the **original** recorded plane first.
+Then every photon, electron and positron is moved along its final trajectory:
+
+```text
+x_new = x_old + (z_new - z_old) * u / w
+y_new = y_old + (z_new - z_old) * v / w
+w = sign(particle_code) * sqrt(1 - u*u - v*v)
+```
+
+The implementation converts mm to the IAEA record's cm units. Directions,
+energies, weights, species, LATCH and history grouping are unchanged by this
+step, including backward particles and empty-history accounting. Only X/Y and
+the header's constant Z and geometry bounds change. Float32 position storage
+introduces small rounding differences; with an unchanged plane the relocation
+is an exact no-op. A nonzero move rejects tangent/non-real longitudinal
+cosines and overflowing positions rather than discarding particles. No partial
+output set is published on failure.
+
+This is geometric extrapolation, not backward transport: it does not undo
+upstream interactions or reconstruct missing particles. Choose a replay plane
+in a material-free region before the modeled hardware; moving it across
+hardware would change which interactions TOPAS simulates. With no intervening
+material, the final straight-line projections used for bixel selection are
+preserved up to floating-point rounding. Particles exactly on a half-open bixel
+boundary can therefore be sensitive to record precision.
+
+New provenance records include the input/output plane distances, operation
+order and `model13-focal-spot-plane-v3` algorithm identifier. Header constant Z
+is used automatically by the existing source placement and selection code.
+Use a fresh output directory and prepare fresh TOPAS projects; do not edit
+headers alone. Previously modified files remain readable.
 
 ## Photon spectrum reweighting: shifting the continuum peak
 
@@ -311,8 +351,8 @@ files. Existing unmodified sources remain supported.
 
 Use original inputs for every variant; do not modify one variant again to create
 another. Joint modifications compose spectrum weights and directions without
-changing particle energies, positions, species, history flags, increments or
-LATCH values. No MU calibration or quantitative uncertainty for differences
+changing particle energies, species, history flags, increments or LATCH values.
+Positions remain fixed unless plane relocation is requested. No MU calibration or quantitative uncertainty for differences
 between these sensitivity samples is provided.
 
 ## Inspect phase-space distributions
@@ -347,8 +387,8 @@ The six-panel `distributions.png` shows:
 
 All coordinates are in the source frame, not patient LPS. The downstream map
 is a straight-line extrapolation without hardware or transport, not a dose map.
-It shows how direction changes affect projected positions while the recorded
-positions remain fixed. Backward/tangent particles are excluded only from that
+With the output plane unchanged, it shows how direction changes affect projected
+positions while the recorded positions remain fixed. Backward/tangent particles are excluded only from that
 projection; their exclusion count is reported. Spatial/angular maps use linear
 colors and equal physical axis scales.
 

@@ -38,10 +38,14 @@ PHASE_SPACE_FILE_BASES = [
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
-    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part1',
-    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part2',
-    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part3',
-    'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part4',
+    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part1',
+    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part2',
+    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part3',
+    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part4',
+    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part1',
+    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part2',
+    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part3',
+    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part4',
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.

@@ -16,7 +16,7 @@ import numpy as np
 # Support direct invocation from a repository checkout.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from minibeam.sources.iaea import read_header, validated_chunks
-from tools.phsp_modifications import BASE, PRESETS, VERSION, Spectrum, photon_masks, spread, transition
+from tools.phsp_modifications import BASE, PRESETS, VERSION, Spectrum, photon_masks, spread, transition, relocate_plane
 
 
 def digest(value):
@@ -32,8 +32,10 @@ def numeric(value, name):
 def configuration(path):
     path=Path(path).resolve()
     with path.open('rb') as stream:cfg=tomllib.load(stream)
-    unknown=set(cfg)-{'file_bases','output_dir','seed','variants'}
+    unknown=set(cfg)-{'file_bases','output_dir','seed','variants','output_plane_distance_mm'}
     if unknown:raise ValueError(f'Unknown configuration keys: {sorted(unknown)}')
+    plane=numeric(cfg.get('output_plane_distance_mm',272.1),'output_plane_distance_mm')
+    if plane<=0:raise ValueError('output_plane_distance_mm must be positive')
     def resolve(value):
         p=Path(value).expanduser()
         return (p if p.is_absolute() else path.parent/p).resolve()
@@ -68,7 +70,7 @@ def configuration(path):
         if min(sx,sy)<0:raise ValueError('Source sigmas must be nonnegative')
         resolved[name]=dict(spectrum=choice,parameters=p,source_sigma_x_mm=sx,source_sigma_y_mm=sy)
     if len({n.casefold() for n in resolved})!=len(resolved):raise ValueError('Case-insensitive variant name collision')
-    return bases,output,seed,resolved
+    return bases,output,seed,resolved,plane
 
 
 def stat_init():
@@ -85,7 +87,7 @@ def stats_update(stats,a):
         s['minimum_energy']=min(s['minimum_energy'],float(e.min()));s['maximum_energy']=max(s['maximum_energy'],float(e.max()))
 
 
-def update_header(raw,stats,marker):
+def update_header(raw,stats,marker,plane=None,bounds=None):
     # Preserve original source/transport descriptions. Replace the affected summary.
     lines=['// Weight Wmin Wmax <E> Emin Emax Particle; <E> is weight-averaged']
     for s,name in zip(stats,['PHOTONS','ELECTRONS','POSITRONS']):
@@ -95,11 +97,18 @@ def update_header(raw,stats,marker):
     section='$STATISTICAL_INFORMATION_PARTICLES:\n'+'\n'.join(lines)+'\n\n'
     pattern=r'(?ms)^\$STATISTICAL_INFORMATION_PARTICLES:.*?(?=^\$|\Z)'
     raw=re.sub(pattern,lambda _:section,raw) if re.search(pattern,raw) else raw+'\n'+section
+    if plane is not None:
+        raw=re.sub(r'(?ms)^\$RECORD_CONSTANT:.*?(?=^\$|\Z)',
+                   lambda _:f'$RECORD_CONSTANT:\n{plane/10:.17g}\n\n',raw)
+        section='$STATISTICAL_INFORMATION_GEOMETRY:\n'+''.join(
+            f'{bounds[0,i]:.12g} {bounds[1,i]:.12g}\n' for i in range(2))+'\n'
+        pattern=r'(?ms)^\$STATISTICAL_INFORMATION_GEOMETRY:.*?(?=^\$|\Z)'
+        raw=re.sub(pattern,lambda _:section,raw) if re.search(pattern,raw) else raw+'\n'+section
     return raw+'\n// Modified source; original generation descriptions above retained as provenance.\n$MINIBEAM_MODIFICATION:\n'+marker+'\n'
 
 
 def modify(config, *, dry_run=False, chunk_size=100_000):
-    bases,output,seed,variants=configuration(config)
+    bases,output,seed,variants,plane=configuration(config)
     infos=[read_header(b) for b in bases]
     if any(i.get('modification') for i in infos):raise ValueError('Use original inputs; chaining already modified sources is unsupported')
     first=infos[0]
@@ -107,6 +116,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
     size=sum(i['data'].stat().st_size for i in infos)
     print(f'{len(infos)} parts; {sum(i["counts"]["ORIG_HISTORIES"] for i in infos):,} original histories; {len(variants)} variants; about {size*len(variants)/2**30:.2f} GiB particle output')
     print(f'Output: {output}')
+    print(f'Phase-space plane: {first["plane_distance_mm"]:g} → {plane:g} mm from source; trajectory-preserving relocation after focal spread')
     if dry_run:
         print('Dry run: headers checked; particle validation and output writing not performed.')
         return output
@@ -169,6 +179,8 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         for n in variants:(staging/n).mkdir()
         offset=0;all_outputs={n:[] for n in variants};after={n:0. for n in variants};exceptions={n:0 for n in variants}
         common={n:dict(schema=1,algorithm=VERSION,seed=seed,variant=variants[n],inputs=audits,
+            plane_relocation=dict(input_plane_distance_mm=first['plane_distance_mm'],output_plane_distance_mm=plane,
+                method='straight-line projection after focal spread; all species; signed longitudinal cosine; float32 positions'),
             normalization='Preserve full ordered-input photon weight; low-energy and 511-keV protected weights unchanged; smoothly tapered global correction; original histories unchanged',
             global_continuum_correction=correction[n],original_unprotected_weight=original,
             protected_photon_weight=protected_total,protected_photon_count=protected_count,
@@ -178,6 +190,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         for i,info in enumerate(infos):
             print(f'Pass 2: writing variants for {i+1}/{len(infos)}: {info["base"].name}',flush=True)
             stats={n:stat_init() for n in variants};sha={n:hashlib.sha256() for n in variants};audit={}
+            bounds={n:np.array([[np.inf,np.inf],[-np.inf,-np.inf]]) for n in variants}
             with ExitStack() as stack:
                 streams={n:stack.enter_context((staging/n/(info['base'].name+'.phsp')).open('wb')) for n in variants}
                 for a,ids in validated_chunks(info,audit,chunk_size):
@@ -190,6 +203,9 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
                             if np.any(~np.isfinite(stored)) or np.any((a['weight'][use]>0)&(stored<=0)):raise ValueError('Output weight overflow/underflow')
                             b['weight'][use]=stored
                         exceptions[n]+=spread(b,ids+offset,v['source_sigma_x_mm'],v['source_sigma_y_mm'],info['plane_distance_mm'],seed)
+                        relocate_plane(b,info['plane_distance_mm'],plane)
+                        bounds[n][0]=np.minimum(bounds[n][0],[b['x'].min(),b['y'].min()])
+                        bounds[n][1]=np.maximum(bounds[n][1],[b['x'].max(),b['y'].max()])
                         after[n]+=float(b['weight'][use].astype(float).sum())
                         stats_update(stats[n],b);raw=b.tobytes();streams[n].write(raw);sha[n].update(raw)
             if audit!=audits[i]:raise ValueError('Input changed between passes')
@@ -199,7 +215,9 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
                 sidecar=staging/n/(part+'.modification.json')
                 sidecar.write_text(json.dumps(provenance,indent=2,allow_nan=False)+'\n')
                 marker=sidecar.name+' '+hashlib.sha256(sidecar.read_bytes()).hexdigest()
-                (staging/n/(part+'.header')).write_text(update_header(info['header'].read_text(),stats[n],marker))
+                moved=plane!=info['plane_distance_mm']
+                (staging/n/(part+'.header')).write_text(update_header(info['header'].read_text(),stats[n],marker,
+                    plane if moved else None,bounds[n]))
                 all_outputs[n].append(dict(basename=part,phsp_sha256=sha[n].hexdigest()))
             offset+=info['counts']['ORIG_HISTORIES']
         for n in variants:

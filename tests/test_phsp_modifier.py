@@ -178,3 +178,91 @@ def test_low_energy_protection_and_conservation(tmp_path,spectrum):
         r=model.ratio(np.array([boundary-1e-8,boundary,boundary+1e-8]),.95)
         assert np.max(np.abs(np.diff(r)))<1e-5
     assert model.ratio(np.array([.01,.05,.1]),.95).tolist()==[1,1,1]
+
+
+def plane_config(tmp_path, bases, plane, **kwargs):
+    cfg=config(tmp_path,bases,**kwargs)
+    cfg.write_text('output_plane_distance_mm='+str(plane)+'\n'+cfg.read_text())
+    return cfg
+
+
+@pytest.mark.parametrize('plane',[200.,350.])
+def test_plane_relocation_all_species_and_trajectories(tmp_path,plane):
+    b=make_iaea(tmp_path/'angled',[(1,-1.,.5,.1,.1,-.2,.05,2,7),
+        (-1,2.,-.2,.3,-.2,.3,.07,0,8), (2,-.4,.4,.6,.2,.1,.04,3,9),
+        (-3,1.,-.4,.2,-.1,.2,.03,0,10)])
+    original,_=read(b)
+    out=modify(plane_config(tmp_path,[b],plane),chunk_size=1)
+    dest=out/'base'/b.name;a,audit=read(dest)
+    assert read_header(dest)['plane_distance_mm']==pytest.approx(plane)
+    assert audit['original_histories']==12
+    assert audit['trailing_empty_histories']==7
+    for k in ['code','energy','u','v','weight','increment','latch']:
+        assert np.array_equal(a[k],original[k])
+    def project(records,z):
+        uv=np.column_stack((records['u'],records['v'])).astype(float)
+        w=np.copysign(np.sqrt(1-(uv*uv).sum(axis=1)),records['code'])
+        return np.column_stack((records['x'],records['y']))*10+(1000-z)*uv/w[:,None]
+    np.testing.assert_allclose(project(a,plane),project(original,272.1),atol=2e-5,rtol=0)
+    h=Path(str(dest)+'.header').read_text()
+    assert '$STATISTICAL_INFORMATION_GEOMETRY:' in h
+    record=audit['modification']['plane_relocation']
+    assert record['output_plane_distance_mm']==plane
+    assert record['input_plane_distance_mm']==272.1
+
+
+def test_plane_relocation_after_spread_and_chunk_invariance(tmp_path):
+    b=sample(tmp_path);v='[variants.x]\nsource_sigma_x_mm=2\nsource_sigma_y_mm=2'
+    fixed=modify(plane_config(tmp_path,[b],272.1,variants=v,name='fixed'))
+    moved=modify(plane_config(tmp_path,[b],200.,variants=v,name='moved'),chunk_size=1)
+    again=modify(plane_config(tmp_path,[b],200.,variants=v,name='again'),chunk_size=3)
+    a,_=read(fixed/'x'/b.name);expected=a.copy()
+    from tools.phsp_modifications import relocate_plane
+    relocate_plane(expected,272.1,200.)
+    actual,_=read(moved/'x'/b.name)
+    assert actual.tobytes()==expected.tobytes()
+    assert Path(str(moved/'x'/b.name)+'.phsp').read_bytes()==Path(str(again/'x'/b.name)+'.phsp').read_bytes()
+
+
+@pytest.mark.parametrize('plane',['true','0','-1','nan','inf'])
+def test_invalid_output_plane(tmp_path,plane):
+    with pytest.raises(ValueError,match='output_plane_distance_mm'):
+        modify(plane_config(tmp_path,[sample(tmp_path)],plane),dry_run=True)
+    assert not (tmp_path/'out').exists()
+
+
+def test_relocation_tangent_rejected_without_published_outputs(tmp_path):
+    b=make_iaea(tmp_path/'tangent',[(1,-1.,0.,0.,1.,0.,.05,1,0)])
+    # Unchanged plane remains a byte-preserving operation.
+    out=modify(plane_config(tmp_path,[b],272.1,name='fixed'))
+    assert Path(str(out/'base'/b.name)+'.phsp').read_bytes()==Path(str(b)+'.phsp').read_bytes()
+    with pytest.raises(ValueError,match='tangent'):
+        modify(plane_config(tmp_path,[b],200.))
+    assert not (tmp_path/'out').exists()
+    assert not list(tmp_path.glob('out.tmp-*'))
+    assert not (tmp_path/'out.lock').exists()
+
+
+def test_relocation_overflow_rejected():
+    from tools.phsp_modifications import relocate_plane
+    a=np.zeros(1,dtype=IAEA_DTYPE);a['code']=1;a['u']=.5
+    with pytest.raises(ValueError,match='overflow'):
+        relocate_plane(a,272.1,1e100)
+
+
+def test_relocated_multifile_selection_and_source_plane(case,tmp_path):
+    from minibeam.sources.phase_space import PhaseSpaceBeamletSource
+    bases=[make_iaea(tmp_path/f'part{i}',[(1,-float(i+1),0.,0.,0.,0.,.05,2,0),
+        (2,-.3,3.,0.,.02,0.,.05,2,i)]) for i in range(2)]
+    out=modify(plane_config(tmp_path,bases,200.))
+    audits=[]
+    list(validated_parts([read_header(out/'base'/b.name) for b in bases],audits))
+    assert all(a['phase_space_plane_distance_mm']==200. for a in audits)
+    for mode in ('field','outside_field','all_forward'):
+        counts=[]
+        for files in (bases,[out/'base'/b.name for b in bases]):
+            src=PhaseSpaceBeamletSource(file_bases=[str(b) for b in files],selection=mode)
+            src.prepare(case[3],20,execution='combined')
+            counts.append([s['record']['selected_particles'] for s in src.selections.values()])
+        assert counts[0]==counts[1]
+        assert src.info['plane_distance_mm']==200.

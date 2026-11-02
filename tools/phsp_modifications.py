@@ -8,7 +8,7 @@ PRESETS = {'baseline': BASE,
     'peak_plus_0p1': (0.9823102326993479, 5.408931306994932, -1.6902537833662665)}
 LINE = .51099895
 PROTECTION = .0005
-VERSION = 'model13-focal-spot-v2'
+VERSION = 'model13-focal-spot-plane-v3'
 LOW_ENERGY_KEEP = .1
 LOW_ENERGY_FULL = .2
 
@@ -78,6 +78,30 @@ def gaussian_pairs(ids, seed):
     u = uniform(0x9e3779b97f4a7c15);v = uniform(0x3c6ef372fe94f82a)
     radius = np.sqrt(-2*np.log(u))
     return radius*np.cos(2*np.pi*v), radius*np.sin(2*np.pi*v)
+
+
+def relocate_plane(a, input_distance_mm, output_distance_mm):
+    """Move every species along its recorded line; IAEA X/Y are cm.
+
+    Apply after focal spread, so the final modified trajectories are preserved.
+    The sign of the particle code encodes the sign of the longitudinal cosine.
+    No interactions are undone or simulated by this geometric operation.
+    """
+    delta_cm = (output_distance_mm - input_distance_mm) / 10
+    if delta_cm == 0:
+        return  # Preserve every record bit, including near-tangent directions.
+    u, v = a['u'].astype(float), a['v'].astype(float)
+    w2 = 1 - u*u - v*v
+    if np.any(w2 <= 0):
+        raise ValueError('Cannot relocate tangent or non-real longitudinal directions; no particles are dropped')
+    w = np.copysign(np.sqrt(w2), a['code'])
+    with np.errstate(over='ignore', invalid='ignore'):
+        xy = np.column_stack((a['x'], a['y'])).astype(float)
+        xy += delta_cm * np.column_stack((u, v)) / w[:, None]
+        stored = xy.astype(np.float32)
+    if np.any(~np.isfinite(stored)):
+        raise ValueError('Plane relocation positions overflow float32')
+    a['x'], a['y'] = stored[:, 0], stored[:, 1]
 
 
 def spread(a, ids, sx, sy, distance, seed):
