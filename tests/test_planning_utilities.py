@@ -24,7 +24,7 @@ def test_machine_equivalence(sad):
 def test_settings_equivalence(source,execution,water):
     bases=['one','two']
     expected=dict(number_of_batches=1,seed=12345,engine='TOPASPhoton',bundle_dir='example',histories=100,num_threads=4,
-        beamlet_execution=execution,water=water,enable_opengl=False,
+        beamlet_execution=execution,water=water,enable_opengl=False,phase_space_precheck=True,
         source_config={'type':source},dose_spacing_mm=(2.,2.,2.))
     if source=='phase_space':expected['source_config'].update(file_bases=['one','two'], selection='field')
     actual=topas_settings(project_dir='example',source_type=source,phase_space_file_bases=bases,

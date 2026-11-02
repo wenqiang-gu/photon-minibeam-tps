@@ -34,6 +34,7 @@ class WaterSettings:
     dose_spacing_mm: tuple[float, float, float] | None
     enable_opengl: bool
     phase_space_selection: str = "field"
+    topas_phase_space_precheck: bool = True
     number_of_batches: int = 1
     random_seed: int = 12345
     # None preserves TOML field dimensions for existing package callers.
@@ -86,6 +87,7 @@ def build_planning(settings, project_dir):
     plan.prop_dose_calc = topas_settings(
         project_dir=root, source_type=settings.source_type, phase_space_file_bases=settings.phase_space_file_bases,
         phase_space_selection=settings.phase_space_selection,
+        phase_space_precheck=settings.topas_phase_space_precheck,
         number_of_batches=settings.number_of_batches, seed=settings.random_seed,
         histories=settings.histories_per_job, num_threads=settings.topas_threads_per_job, execution='combined',
         water=True, enable_opengl=settings.enable_opengl, dose_spacing_mm=settings.dose_spacing_mm)

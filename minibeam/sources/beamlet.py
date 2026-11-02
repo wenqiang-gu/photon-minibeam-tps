@@ -120,7 +120,7 @@ class PointBeamletSource:
         for axis,pos,rot in zip('XYZ',focal-context.patient_center,angles):
             lines += [f'd:Ge/Source/Trans{axis} = {pos:.12g} mm', f'd:Ge/Source/Rot{axis} = {rot:.12g} deg']
         lines += ['s:So/Beam/Type = "PhaseSpace"','s:So/Beam/Component = "Source"',
-                  f's:So/Beam/PhaseSpaceFileName = "{stem}"','b:So/Beam/PhaseSpacePreCheck = "True"',
+                  f's:So/Beam/PhaseSpaceFileName = "{stem}"',f'b:So/Beam/PhaseSpacePreCheck = "{context.phase_space_precheck}"',
                   'b:So/Beam/PhaseSpaceIncludeEmptyHistories = "False"','i:So/Beam/PhaseSpaceMultipleUse = 1']
         assets=tuple((stem+suffix,Path(self._temporary.name)/(key+suffix)) for suffix in ('.header','.phsp'))
         return ParameterFragment('\n'.join(lines)+'\n',assets=assets+energy_assets,record=dict(record, **record['energy_models'][0],

@@ -15,6 +15,7 @@ class RunSettings:
     seed: int = 12345
     num_threads: int = 1
     enable_opengl: bool = False
+    phase_space_precheck: bool = True
     enforce_ct_crop_protection: bool = True
     ct_crop_voxels: dict | None = None
     dose_spacing_mm: tuple | None = None
@@ -33,6 +34,7 @@ class JobContext:
     beam_index: int
     ray_index: int
     beamlet_index: int
+    phase_space_precheck: bool = True
 
 @dataclass(frozen=True)
 class ParameterFragment:

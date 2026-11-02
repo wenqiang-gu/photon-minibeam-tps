@@ -38,7 +38,7 @@ def photon_machine(sad_mm):
 
 
 def topas_settings(*, project_dir, source_type, phase_space_file_bases, histories,
-                   num_threads, execution, water, enable_opengl, dose_spacing_mm, phase_space_selection="field", number_of_batches=1, seed=12345):
+                   num_threads, execution, water, enable_opengl, dose_spacing_mm, phase_space_selection="field", number_of_batches=1, seed=12345, phase_space_precheck=True):
     """Build independent engine settings without opening source files."""
     positive_integer('NUMBER_OF_BATCHES', number_of_batches)
     positive_integer('RANDOM_SEED', seed)
@@ -48,6 +48,8 @@ def topas_settings(*, project_dir, source_type, phase_space_file_bases, historie
     positive_integer('TOPAS_THREADS_PER_JOB', num_threads)
     boolean('water', water)
     boolean('ENABLE_OPENGL', enable_opengl)
+    boolean('TOPAS_PHASE_SPACE_PRECHECK', phase_space_precheck)
+    print(f'TOPAS phase-space PreCheck: {phase_space_precheck}')
     if execution not in {'separate', 'combined'}:
         raise ValueError('BEAMLET_EXECUTION must be separate or combined')
     if source_type not in {'point', 'phase_space'}:
@@ -65,7 +67,7 @@ def topas_settings(*, project_dir, source_type, phase_space_file_bases, historie
             print('All downstream source particles: physical hardware defines irradiation; planning bixels do not restrict fluence.')
     settings = dict(number_of_batches=number_of_batches, seed=seed, engine='TOPASPhoton', bundle_dir=str(project_dir), histories=histories,
                     num_threads=num_threads, beamlet_execution=execution, water=water,
-                    enable_opengl=enable_opengl, source_config=source)
+                    enable_opengl=enable_opengl, phase_space_precheck=phase_space_precheck, source_config=source)
     if dose_spacing_mm is not None:
         settings['dose_spacing_mm'] = deepcopy(dose_spacing_mm)
     return settings

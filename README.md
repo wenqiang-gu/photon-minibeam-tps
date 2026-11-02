@@ -125,6 +125,12 @@ to the sibling `<project-name>-crop-preview` directory, including when validatio
 fails. Collection and forward use saved projects, independently of current planning
 settings and original DICOM/phase-space files.
 
+Both workflows expose `TOPAS_PHASE_SPACE_PRECHECK = True`. Set it to `False`
+to skip TOPAS's startup replay-file scan for an unchanged pair already checked
+successfully. It also applies to generated point-source replay. Prepare a fresh
+project; appended batches inherit the saved setting. Source validation and geometry
+overlap checks remain enabled. See [replay validation](docs/geometry-and-sources.md#topas-replay-precheck).
+
 ## Water workflow
 
 Edit `FIELD_SIZE_MM` in `water_phantom.py` to set the square field at the water

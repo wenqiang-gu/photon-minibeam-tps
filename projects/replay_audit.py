@@ -55,8 +55,11 @@ def audit_setup(root, manifest=None):
             if policy==POLICY:
                 multiple = re.search(r'i:So/[^/]+/PhaseSpaceMultipleUse\s*=\s*(\d+)',text)
                 requested = re.search(r'i:So/[^/]+/NumberOfHistoriesInRun\s*=\s*(\d+)',text)
-                precheck = re.search(r'b:So/[^/]+/PhaseSpacePreCheck\s*=\s*"True"',text)
-                valid=(not include and multiple and int(multiple[1])==1 and requested
+                precheck = re.search(r'b:So/[^/]+/PhaseSpacePreCheck\s*=\s*"(True|False)"',text)
+                expected_precheck=manifest.get('phase_space_precheck',True)
+                row['phase_space_precheck']=None if not precheck else precheck[1]=='True'
+                valid=(type(expected_precheck) is bool and row['phase_space_precheck'] is expected_precheck
+                       and not include and multiple and int(multiple[1])==1 and requested
                        and int(requested[1])==nonempty and precheck and original==nonempty+1 and nonempty==job['histories']
                        and size==(particles+1)*RECORD.size and last[6]==-1 and last[-1]==1
                        and job['normalization_histories']>=nonempty>=1)

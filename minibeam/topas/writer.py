@@ -106,7 +106,8 @@ class JobWriter:
                         continue
                     members = group_map.get(native_index, [dict(bixel_index=native_index,beam_index=bi,ray_index=ri,beamlet_index=li)])
                     index = len(jobs) + 1
-                    context = JobContext(beam, ray, bixel, center, native_index, bi, ri, li)
+                    context = JobContext(beam, ray, bixel, center, native_index, bi, ri, li,
+                                         phase_space_precheck=self.phase_space_precheck)
                     description = self.source_model.describe(context)
                     if self.beamlet_execution == "combined" and "combined" not in description.job_modes:
                         raise ValueError("Source does not support combined jobs")
@@ -164,6 +165,7 @@ class JobWriter:
         from ..steering import beam_geometry_records
         signature = {
             "beamlet_execution": self.beamlet_execution,
+            "phase_space_precheck": self.phase_space_precheck,
             "beam_geometry": beam_geometry_records(stf),
             "normalization": 'original_accelerator_history' if phase_space else 'independent_primary_photon',
             "implementation_sha256": implementation_hashes(),
@@ -269,6 +271,7 @@ class JobWriter:
         manifest = {"schema_version": 4, "history_budget": "per_job", "beamlet_execution": self.beamlet_execution, "request_id": request_id, "files": files,
                     "implementation_sha256": definition["implementation_sha256"],
                     "enable_opengl": self.enable_opengl, "num_threads": self.num_threads,
+                    "phase_space_precheck": self.phase_space_precheck,
                     "versions": versions, "topas_target": "4.2.p3", "jobs": jobs,
                     "planning": definition["planning"],
                     "beam_geometry": definition["beam_geometry"],

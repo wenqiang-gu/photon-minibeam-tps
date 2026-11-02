@@ -22,6 +22,7 @@ class TOPASPhotonEngine(DoseEngineBase):
     number_of_batches: int = 1
     num_threads: int = 1
     enable_opengl: bool = False
+    phase_space_precheck: bool = True
     enforce_ct_crop_protection: bool = True
     ct_crop_voxels: dict | None = None
     dose_spacing_mm: tuple | None = None
@@ -68,6 +69,8 @@ class TOPASPhotonEngine(DoseEngineBase):
             raise ValueError("Histories must be 2..2^31-1 and seed within 1..2^31-1")
         if type(self.enforce_ct_crop_protection) is not bool:
             raise ValueError("enforce_ct_crop_protection must be a Boolean")
+        if type(self.phase_space_precheck) is not bool:
+            raise ValueError("phase_space_precheck must be a Boolean")
         if type(self.enable_opengl) is not bool:
             raise ValueError("enable_opengl must be a boolean")
         if source_model is not None and self.source_config is not None:

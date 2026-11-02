@@ -49,6 +49,10 @@ SOURCE_TYPE = "phase_space"  # "point" or "phase_space"
 # all_forward also requires combined execution; hardware defines irradiation.
 # HISTORIES_PER_JOB counts original histories, not selected particles.
 PHASE_SPACE_SELECTION = "field"
+# Validate the TOPAS replay file before transport (also point-source replay).
+# Disable only for an unchanged replay pair already checked successfully.
+# TOPAS requires this when PhaseSpaceIncludeEmptyHistories=True.
+TOPAS_PHASE_SPACE_PRECHECK = True
 PHASE_SPACE_FILE_BASES = [
     "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1",
     "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2",
@@ -125,6 +129,7 @@ def planning_settings():
         source_type=SOURCE_TYPE,
         phase_space_file_bases=PHASE_SPACE_FILE_BASES,
         phase_space_selection=PHASE_SPACE_SELECTION,
+        topas_phase_space_precheck=TOPAS_PHASE_SPACE_PRECHECK,
         histories_per_job=HISTORIES_PER_JOB,
         number_of_batches=NUMBER_OF_BATCHES, random_seed=RANDOM_SEED,
         topas_threads_per_job=TOPAS_THREADS_PER_JOB,

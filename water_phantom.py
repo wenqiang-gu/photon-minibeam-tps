@@ -11,7 +11,7 @@ from minibeam.workflow.cli import parse_stage_arguments, dispatch
 # EDITABLE SETTINGS
 # Water boundaries: X/Z centered on zero; entrance Y=0, downstream face Y=size.
 PHANTOM_SIZE_MM = 200.0
-PHANTOM_SPACING_MM = 2.0
+PHANTOM_SPACING_MM = 1.0
 SSD_MM = 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
@@ -33,6 +33,10 @@ SOURCE_TYPE = 'phase_space'  # 'point' uses the existing empirical spectrum
 # all_forward also requires combined execution; hardware defines irradiation.
 # HISTORIES_PER_JOB counts original histories, not selected particles.
 PHASE_SPACE_SELECTION = "all_forward"
+# Validate the TOPAS replay file before transport (also point-source replay).
+# Disable only for an unchanged replay pair already checked successfully.
+# TOPAS requires this when PhaseSpaceIncludeEmptyHistories=True.
+TOPAS_PHASE_SPACE_PRECHECK = False
 PHASE_SPACE_FILE_BASES = [
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
@@ -49,7 +53,7 @@ PHASE_SPACE_FILE_BASES = [
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.
-HISTORIES_PER_JOB = 680_000_000
+HISTORIES_PER_JOB = 170_000_000 # 680_000_000
 # Total batches initially prepared; add_batches.sh can append more later.
 # Reuses saved source particles; only TOPAS transport seeds change.
 NUMBER_OF_BATCHES = 1 # 20
@@ -77,6 +81,7 @@ def planning_settings():
         source_type=SOURCE_TYPE,
         phase_space_file_bases=PHASE_SPACE_FILE_BASES,
         phase_space_selection=PHASE_SPACE_SELECTION,
+        topas_phase_space_precheck=TOPAS_PHASE_SPACE_PRECHECK,
         histories_per_job=HISTORIES_PER_JOB,
         number_of_batches=NUMBER_OF_BATCHES, random_seed=RANDOM_SEED,
         topas_threads_per_job=TOPAS_THREADS_PER_JOB,
