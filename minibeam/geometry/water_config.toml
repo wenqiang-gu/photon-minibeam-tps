@@ -88,7 +88,7 @@ enabled = true
 # PHYSICAL AXIAL: source to body midpoint along beam Z, mm (not curvature center).
 source_to_center_mm = 470.5
 # PHYSICAL: total axial thickness in the thick regions, mm.
-thickness_mm = 77.0
+thickness_mm = 57.0 # 77.0
 # Switch: rounded tangent tip; false uses the existing focused flat face.
 round_tip_enabled = true
 # PHYSICAL: radius of the field-defining tip in the Y/Z plane, mm.

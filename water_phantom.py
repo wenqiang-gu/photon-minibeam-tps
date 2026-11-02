@@ -11,8 +11,8 @@ from minibeam.workflow.cli import parse_stage_arguments, dispatch
 # EDITABLE SETTINGS
 # Water boundaries: X/Z centered on zero; entrance Y=0, downstream face Y=size.
 PHANTOM_SIZE_MM = 200.0
-PHANTOM_SPACING_MM = 1.0
-SSD_MM = 1000.0
+PHANTOM_SPACING_MM = 2.0
+SSD_MM = 900.0 # 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
 # Must be an integer multiple of BIXEL_WIDTH_MM.
@@ -42,14 +42,10 @@ PHASE_SPACE_FILE_BASES = [
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
     # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
-    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part1',
-    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part2',
-    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part3',
-    # 'outputs/modified_phase_space/focal_spread_2mm/ELEKTA_PRECISE_6mv_part4',
-    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part1',
-    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part2',
-    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part3',
-    'outputs/modified_phase_space1/focal_spread_2mm_dis200mm/ELEKTA_PRECISE_6mv_part4',
+    'outputs/modified_phase_space1/focal_spread_2mm_axial/ELEKTA_PRECISE_6mv_part1',
+    'outputs/modified_phase_space1/focal_spread_2mm_axial/ELEKTA_PRECISE_6mv_part2',
+    'outputs/modified_phase_space1/focal_spread_2mm_axial/ELEKTA_PRECISE_6mv_part3',
+    'outputs/modified_phase_space1/focal_spread_2mm_axial/ELEKTA_PRECISE_6mv_part4',
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.

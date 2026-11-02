@@ -187,7 +187,7 @@ def plane_config(tmp_path, bases, plane, **kwargs):
 
 
 @pytest.mark.parametrize('plane',[200.,350.])
-def test_plane_relocation_all_species_and_trajectories(tmp_path,plane):
+def test_plane_relocation_all_species_radial_positions(tmp_path,plane):
     b=make_iaea(tmp_path/'angled',[(1,-1.,.5,.1,.1,-.2,.05,2,7),
         (-1,2.,-.2,.3,-.2,.3,.07,0,8), (2,-.4,.4,.6,.2,.1,.04,3,9),
         (-3,1.,-.4,.2,-.1,.2,.03,0,10)])
@@ -199,16 +199,19 @@ def test_plane_relocation_all_species_and_trajectories(tmp_path,plane):
     assert audit['trailing_empty_histories']==7
     for k in ['code','energy','u','v','weight','increment','latch']:
         assert np.array_equal(a[k],original[k])
-    def project(records,z):
-        uv=np.column_stack((records['u'],records['v'])).astype(float)
-        w=np.copysign(np.sqrt(1-(uv*uv).sum(axis=1)),records['code'])
-        return np.column_stack((records['x'],records['y']))*10+(1000-z)*uv/w[:,None]
-    np.testing.assert_allclose(project(a,plane),project(original,272.1),atol=2e-5,rtol=0)
+    for key in ['x', 'y']:
+        np.testing.assert_array_equal(a[key], (original[key].astype(float) * (plane / 272.1)).astype(np.float32))
+    # Off-axis directions need not point back to the nominal source. This
+    # transformation deliberately does not preserve downstream intersections.
+    assert not np.isclose(float(a['x'][0]) * 10 + (1000-plane)*.1/(1-.1**2-.2**2)**.5,
+                          float(original['x'][0]) * 10 + (1000-272.1)*.1/(1-.1**2-.2**2)**.5)
     h=Path(str(dest)+'.header').read_text()
     assert '$STATISTICAL_INFORMATION_GEOMETRY:' in h
     record=audit['modification']['plane_relocation']
     assert record['output_plane_distance_mm']==plane
     assert record['input_plane_distance_mm']==272.1
+    assert 'nominal-source radial position scaling' in record['method']
+    assert audit['modification']['algorithm']=='model13-focal-spot-radial-plane-v4'
 
 
 def test_plane_relocation_after_spread_and_chunk_invariance(tmp_path):
@@ -231,21 +234,20 @@ def test_invalid_output_plane(tmp_path,plane):
     assert not (tmp_path/'out').exists()
 
 
-def test_relocation_tangent_rejected_without_published_outputs(tmp_path):
-    b=make_iaea(tmp_path/'tangent',[(1,-1.,0.,0.,1.,0.,.05,1,0)])
-    # Unchanged plane remains a byte-preserving operation.
+def test_relocation_tangent_position_scaling(tmp_path):
+    b=make_iaea(tmp_path/'tangent',[(1,-1.,1.,2.,1.,0.,.05,1,0)])
     out=modify(plane_config(tmp_path,[b],272.1,name='fixed'))
     assert Path(str(out/'base'/b.name)+'.phsp').read_bytes()==Path(str(b)+'.phsp').read_bytes()
-    with pytest.raises(ValueError,match='tangent'):
-        modify(plane_config(tmp_path,[b],200.))
-    assert not (tmp_path/'out').exists()
-    assert not list(tmp_path.glob('out.tmp-*'))
-    assert not (tmp_path/'out.lock').exists()
+    out=modify(plane_config(tmp_path,[b],200.))
+    a,_=read(out/'base'/b.name)
+    assert a['x'][0]==pytest.approx(200./272.1)
+    assert a['y'][0]==pytest.approx(400./272.1)
+    assert a['u'][0]==1.
 
 
 def test_relocation_overflow_rejected():
     from tools.phsp_modifications import relocate_plane
-    a=np.zeros(1,dtype=IAEA_DTYPE);a['code']=1;a['u']=.5
+    a=np.zeros(1,dtype=IAEA_DTYPE);a['code']=1;a['u']=.5;a['x']=1.
     with pytest.raises(ValueError,match='overflow'):
         relocate_plane(a,272.1,1e100)
 

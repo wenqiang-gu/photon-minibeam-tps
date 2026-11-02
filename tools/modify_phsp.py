@@ -116,7 +116,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
     size=sum(i['data'].stat().st_size for i in infos)
     print(f'{len(infos)} parts; {sum(i["counts"]["ORIG_HISTORIES"] for i in infos):,} original histories; {len(variants)} variants; about {size*len(variants)/2**30:.2f} GiB particle output')
     print(f'Output: {output}')
-    print(f'Phase-space plane: {first["plane_distance_mm"]:g} → {plane:g} mm from source; trajectory-preserving relocation after focal spread')
+    print(f'Phase-space plane: {first["plane_distance_mm"]:g} → {plane:g} mm from source; nominal-source radial position scaling after focal spread; directions unchanged')
     if dry_run:
         print('Dry run: headers checked; particle validation and output writing not performed.')
         return output
@@ -180,7 +180,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         offset=0;all_outputs={n:[] for n in variants};after={n:0. for n in variants};exceptions={n:0 for n in variants}
         common={n:dict(schema=1,algorithm=VERSION,seed=seed,variant=variants[n],inputs=audits,
             plane_relocation=dict(input_plane_distance_mm=first['plane_distance_mm'],output_plane_distance_mm=plane,
-                method='straight-line projection after focal spread; all species; signed longitudinal cosine; float32 positions'),
+                method='nominal-source radial position scaling after focal spread; x/y multiplied by output/input distance; directions unchanged; all species; float32 positions'),
             normalization='Preserve full ordered-input photon weight; low-energy and 511-keV protected weights unchanged; smoothly tapered global correction; original histories unchanged',
             global_continuum_correction=correction[n],original_unprotected_weight=original,
             protected_photon_weight=protected_total,protected_photon_count=protected_count,

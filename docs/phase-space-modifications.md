@@ -2,7 +2,7 @@
 
 The standalone [`tools/modify_phsp.py`](../tools/modify_phsp.py) modifier creates
 reusable IAEA sources before field/bixel selection. It supports model-13 spectrum reweighting, Gaussian effective
-source width, and trajectory-preserving plane relocation. It does not run TOPAS or alter your
+source width, and radial position scaling between planes. It does not run TOPAS or alter your
 original files. Configure variants in
 [`tools/modify_phsp.toml`](../tools/modify_phsp.toml); the numerical implementation
 is in [`tools/phsp_modifications.py`](../tools/phsp_modifications.py).
@@ -86,36 +86,37 @@ including when omitted, is **272.1 mm from the nominal source**. Use, for exampl
 must be finite and positive; Boolean values are rejected.
 
 Focal-spread rotation is evaluated at the **original** recorded plane first.
-Then every photon, electron and positron is moved along its final trajectory:
+Then every photon, electron and positron position is moved along the line from
+the nominal source `(0, 0, 0)` to its recorded position:
 
 ```text
-x_new = x_old + (z_new - z_old) * u / w
-y_new = y_old + (z_new - z_old) * v / w
-w = sign(particle_code) * sqrt(1 - u*u - v*v)
+x_new = x_old * z_new / z_old
+y_new = y_old * z_new / z_old
 ```
 
-The implementation converts mm to the IAEA record's cm units. Directions,
-energies, weights, species, LATCH and history grouping are unchanged by this
-step, including backward particles and empty-history accounting. Only X/Y and
-the header's constant Z and geometry bounds change. Float32 position storage
-introduces small rounding differences; with an unchanged plane the relocation
-is an exact no-op. A nonzero move rejects tangent/non-real longitudinal
-cosines and overflowing positions rather than discarding particles. No partial
-output set is published on failure.
+The distance ratio is dimensionless; X/Y remain in the IAEA record's cm units.
+The nominal source is used, not the random displaced focal point. Directions
+(including the focal-spread adjustment), energies, weights, species, LATCH and
+history grouping are unchanged by this step. Backward and tangent particles
+use the same position rule. Only X/Y and the header's constant Z and geometry
+bounds change. An unchanged plane is an exact no-op; overflowing positions
+fail without publishing partial outputs.
 
-This is geometric extrapolation, not backward transport: it does not undo
-upstream interactions or reconstruct missing particles. Choose a replay plane
-in a material-free region before the modeled hardware; moving it across
-hardware would change which interactions TOPAS simulates. With no intervening
-material, the final straight-line projections used for bixel selection are
-preserved up to floating-point rounding. Particles exactly on a half-open bixel
-boundary can therefore be sensitive to record precision.
+**This is source-distribution modification, not vacuum transport.** It preserves
+position ratios X/Z and Y/Z, but generally changes each particle's trajectory
+and its projection at a fixed downstream plane. Only rays directed exactly
+along the nominal-source connection retain their original lines. Therefore,
+bixel membership and resulting dose may change. It neither simulates material
+interactions nor reconstructs missing upstream particles. Keep the output
+plane before the modeled hardware.
 
-New provenance records include the input/output plane distances, operation
-order and `model13-focal-spot-plane-v3` algorithm identifier. Header constant Z
-is used automatically by the existing source placement and selection code.
-Use a fresh output directory and prepare fresh TOPAS projects; do not edit
-headers alone. Previously modified files remain readable.
+New provenance records include input/output distances, operation order and the
+`model13-focal-spot-radial-plane-v4` algorithm identifier. Earlier `plane-v3`
+outputs used direction-based, trajectory-preserving relocation; they remain
+readable and are not modified. Header constant Z controls source placement.
+Use a fresh output directory and prepare fresh TOPAS projects. Do not change
+headers alone. Existing configured paths and values are retained; choose a new
+output directory before generating these modified samples.
 
 ## Photon spectrum reweighting: shifting the continuum peak
 
