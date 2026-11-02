@@ -32,8 +32,15 @@ def numeric(value, name):
 def configuration(path):
     path=Path(path).resolve()
     with path.open('rb') as stream:cfg=tomllib.load(stream)
-    unknown=set(cfg)-{'file_bases','output_dir','seed','variants','output_plane_distance_mm'}
+    unknown=set(cfg)-{'file_bases','output_dir','seed','variants','output_plane_distance_mm','particle_types'}
     if unknown:raise ValueError(f'Unknown configuration keys: {sorted(unknown)}')
+    particle_types=cfg.get('particle_types',['photon','electron','positron'])
+    allowed={'photon':1,'electron':2,'positron':3}
+    if (not isinstance(particle_types,list) or not particle_types
+        or any(not isinstance(v,str) or v not in allowed for v in particle_types)
+        or len(set(particle_types))!=len(particle_types)):
+        raise ValueError('particle_types must be a nonempty list of unique photon, electron, positron names')
+    particle_types=[v for v in allowed if v in particle_types]
     plane=numeric(cfg.get('output_plane_distance_mm',272.1),'output_plane_distance_mm')
     if plane<=0:raise ValueError('output_plane_distance_mm must be positive')
     def resolve(value):
@@ -70,7 +77,7 @@ def configuration(path):
         if min(sx,sy)<0:raise ValueError('Source sigmas must be nonnegative')
         resolved[name]=dict(spectrum=choice,parameters=p,source_sigma_x_mm=sx,source_sigma_y_mm=sy)
     if len({n.casefold() for n in resolved})!=len(resolved):raise ValueError('Case-insensitive variant name collision')
-    return bases,output,seed,resolved,plane
+    return bases,output,seed,resolved,plane,particle_types
 
 
 def stat_init():
@@ -100,6 +107,7 @@ def update_header(raw,stats,marker,plane=None,bounds=None):
     if plane is not None:
         raw=re.sub(r'(?ms)^\$RECORD_CONSTANT:.*?(?=^\$|\Z)',
                    lambda _:f'$RECORD_CONSTANT:\n{plane/10:.17g}\n\n',raw)
+    if bounds is not None:
         section='$STATISTICAL_INFORMATION_GEOMETRY:\n'+''.join(
             f'{bounds[0,i]:.12g} {bounds[1,i]:.12g}\n' for i in range(2))+'\n'
         pattern=r'(?ms)^\$STATISTICAL_INFORMATION_GEOMETRY:.*?(?=^\$|\Z)'
@@ -108,14 +116,17 @@ def update_header(raw,stats,marker,plane=None,bounds=None):
 
 
 def modify(config, *, dry_run=False, chunk_size=100_000):
-    bases,output,seed,variants,plane=configuration(config)
+    bases,output,seed,variants,plane,particle_types=configuration(config)
+    codes=[{'photon':1,'electron':2,'positron':3}[v] for v in particle_types]
+    filtering=len(codes)!=3
     infos=[read_header(b) for b in bases]
     if any(i.get('modification') for i in infos):raise ValueError('Use original inputs; chaining already modified sources is unsupported')
     first=infos[0]
     if any(i['plane_distance_mm']!=first['plane_distance_mm'] or i['source_description']!=first['source_description'] for i in infos):raise ValueError('Incompatible source geometry or descriptions')
     size=sum(i['data'].stat().st_size for i in infos)
-    print(f'{len(infos)} parts; {sum(i["counts"]["ORIG_HISTORIES"] for i in infos):,} original histories; {len(variants)} variants; about {size*len(variants)/2**30:.2f} GiB particle output')
+    print(f'{len(infos)} parts; {sum(i["counts"]["ORIG_HISTORIES"] for i in infos):,} original histories; {len(variants)} variants; about {size*len(variants)/2**30:.2f} GiB maximum particle output')
     print(f'Output: {output}')
+    print('Retained particle types: '+', '.join(particle_types)+'; original histories unchanged')
     print(f'Phase-space plane: {first["plane_distance_mm"]:g} → {plane:g} mm from source; nominal-source radial position scaling after focal spread; directions unchanged')
     if dry_run:
         print('Dry run: headers checked; particle validation and output writing not performed.')
@@ -128,7 +139,10 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
     for i,info in enumerate(infos):
         print(f'Pass 1: validating {i+1}/{len(infos)}: {info["base"].name}',flush=True)
         audit={}
+        selected_count=0
         for a,ids in validated_chunks(info,audit,chunk_size):
+            a=a[np.isin(np.abs(a['code'].astype(int)),codes)]
+            selected_count+=len(a)
             photon,protected,use=photon_masks(a)
             w=a['weight'][use].astype(float);e=np.abs(a['energy'][use].astype(float))
             original+=float(w.sum());protected_total+=float(a['weight'][protected].astype(float).sum());protected_count+=int(protected.sum())
@@ -145,6 +159,8 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
                     positive_weight_ranges[n][0]=min(positive_weight_ranges[n][0],float(positive.min()))
                     positive_weight_ranges[n][1]=max(positive_weight_ranges[n][1],float(positive.max()))
                 if len(r):ranges[n]=[min(ranges[n][0],float(r.min())),max(ranges[n][1],float(r.max()))]
+        if selected_count==0:
+            raise ValueError(f'{info["base"].name}: particle_types selects no records; empty IAEA output parts are unsupported')
         if audit['phsp_sha256'] in hashes:raise ValueError('Duplicate particle-file content; distinct batches required')
         hashes.add(audit['phsp_sha256']);audits.append(audit)
     correction={n:(1. if models[n].identity or original==0 else 1+(original-weighted[n])/tapered[n]) for n in variants}
@@ -179,9 +195,11 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         for n in variants:(staging/n).mkdir()
         offset=0;all_outputs={n:[] for n in variants};after={n:0. for n in variants};exceptions={n:0 for n in variants}
         common={n:dict(schema=1,algorithm=VERSION,seed=seed,variant=variants[n],inputs=audits,
+            particle_types=particle_types,
+            particle_selection_policy="retain selected species; preserve original histories and weights; rebuild history flags/increments",
             plane_relocation=dict(input_plane_distance_mm=first['plane_distance_mm'],output_plane_distance_mm=plane,
                 method='nominal-source radial position scaling after focal spread; x/y multiplied by output/input distance; directions unchanged; all species; float32 positions'),
-            normalization='Preserve full ordered-input photon weight; low-energy and 511-keV protected weights unchanged; smoothly tapered global correction; original histories unchanged',
+            normalization='Preserve selected ordered-input photon weight; low-energy and 511-keV protected weights unchanged; smoothly tapered global correction; original histories unchanged',
             global_continuum_correction=correction[n],original_unprotected_weight=original,
             protected_photon_weight=protected_total,protected_photon_count=protected_count,
             raw_multiplier_range=ranges[n],model_endpoint_MeV=5.75,protected_band_MeV=[.51049895,.51149895],
@@ -190,10 +208,24 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         for i,info in enumerate(infos):
             print(f'Pass 2: writing variants for {i+1}/{len(infos)}: {info["base"].name}',flush=True)
             stats={n:stat_init() for n in variants};sha={n:hashlib.sha256() for n in variants};audit={}
+            previous_history=0;selected_nonempty=0;selected_count=0
             bounds={n:np.array([[np.inf,np.inf],[-np.inf,-np.inf]]) for n in variants}
             with ExitStack() as stack:
                 streams={n:stack.enter_context((staging/n/(info['base'].name+'.phsp')).open('wb')) for n in variants}
                 for a,ids in validated_chunks(info,audit,chunk_size):
+                    if filtering:
+                        keep=np.isin(np.abs(a['code'].astype(int)),codes)
+                        a=a[keep].copy();ids=ids[keep]
+                        if not len(a):continue
+                        # Preserve original local history IDs across filtered chunks.
+                        increments=np.diff(np.r_[previous_history,ids])
+                        if np.any(increments>np.iinfo(np.int32).max):
+                            raise ValueError('Filtered history gap exceeds IAEA int32 increment capacity')
+                        a['increment']=increments
+                        a['energy']=np.where(increments>0,-np.abs(a['energy']),np.abs(a['energy']))
+                    previous_history=int(ids[-1])
+                    selected_nonempty+=int(np.count_nonzero(a['increment']))
+                    selected_count+=len(a)
                     _,_,use=photon_masks(a)
                     for n,v in variants.items():
                         b=a.copy()
@@ -211,13 +243,24 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
             if audit!=audits[i]:raise ValueError('Input changed between passes')
             for n in variants:
                 part=info['base'].name
-                provenance=dict(common[n],set_id=digest(common[n]),part_index=i,output_basename=part,output_phsp_sha256=sha[n].hexdigest())
+                provenance=dict(common[n],set_id=digest(common[n]),part_index=i,output_basename=part,output_phsp_sha256=sha[n].hexdigest(),
+                    selection_counts=dict(retained_particles=selected_count,excluded_particles=audit['records']-selected_count,
+                        nonempty_histories=selected_nonempty,empty_histories=info['counts']['ORIG_HISTORIES']-selected_nonempty,
+                        trailing_empty_histories=info['counts']['ORIG_HISTORIES']-previous_history))
                 sidecar=staging/n/(part+'.modification.json')
                 sidecar.write_text(json.dumps(provenance,indent=2,allow_nan=False)+'\n')
                 marker=sidecar.name+' '+hashlib.sha256(sidecar.read_bytes()).hexdigest()
                 moved=plane!=info['plane_distance_mm']
-                (staging/n/(part+'.header')).write_text(update_header(info['header'].read_text(),stats[n],marker,
-                    plane if moved else None,bounds[n]))
+                header=update_header(info['header'].read_text(),stats[n],marker,
+                    plane if moved else None,bounds[n])
+                if filtering:
+                    # ORIG_HISTORIES stays unchanged, including filtered-empty events.
+                    counts=dict(PARTICLES=selected_count,CHECKSUM=selected_count*33,
+                                **dict(zip(('PHOTONS','ELECTRONS','POSITRONS'),[v['count'] for v in stats[n]])))
+                    for key,value in counts.items():
+                        header=re.sub(r'(?ms)^\$'+key+r':.*?(?=^\$|\Z)',
+                                      lambda _,key=key,value=value:f'${key}:\n{value}\n\n',header)
+                (staging/n/(part+'.header')).write_text(header)
                 all_outputs[n].append(dict(basename=part,phsp_sha256=sha[n].hexdigest()))
             offset+=info['counts']['ORIG_HISTORIES']
         for n in variants:

@@ -2,10 +2,36 @@
 
 The standalone [`tools/modify_phsp.py`](../tools/modify_phsp.py) modifier creates
 reusable IAEA sources before field/bixel selection. It supports model-13 spectrum reweighting, Gaussian effective
-source width, and radial position scaling between planes. It does not run TOPAS or alter your
+source width, particle-type selection, and radial position scaling between planes. It does not run TOPAS or alter your
 original files. Configure variants in
 [`tools/modify_phsp.toml`](../tools/modify_phsp.toml); the numerical implementation
 is in [`tools/phsp_modifications.py`](../tools/phsp_modifications.py).
+
+## Select particle types
+
+Set this global option before the `[variants.*]` tables:
+
+```toml
+particle_types = ["photon", "electron", "positron"] # Default: retain all
+# particle_types = ["photon"]
+# particle_types = ["electron", "positron"]
+```
+
+Any nonempty combination is supported, with no duplicates. The selection applies
+to every variant, retaining both forward and backward particles of those species.
+It is independent of downstream field/bixel filtering. An input part with no
+selected particles is rejected; empty IAEA particle files are not supported.
+
+Original-history budgets remain unchanged, including histories made empty by
+filtering. History flags and increments are rebuilt, while retained particles'
+energies, statistical weights and other properties are preserved unless a requested
+spectrum/spread/plane modification changes them. Selection does not renormalize
+remaining particles to compensate for discarded species. Thus photon-only and
+charged-particle-only studies use the same original-history denominator.
+Focal spread and spectrum tuning still affect photons only; plane relocation acts
+on all retained species. Provenance records the selection and per-part retained,
+excluded and empty-history counts. New outputs use algorithm version
+`model13-focal-spot-particle-selection-v5`.
 
 ## Low-energy protection
 
@@ -33,7 +59,7 @@ it does **not** scan or fully validate particle records. A normal run validates
 all records. Relative configuration paths are relative to the TOML file, not
 the working directory; `~` is expanded. Choose a new output directory each time.
 The enabled variants are selected explicitly in the TOML. Each variant writes
-a full copy of all input particle files.
+a selected copy of each input particle file.
 
 ```toml
 file_bases = ["/path/original_part1", "/path/original_part2"]

@@ -211,7 +211,7 @@ def test_plane_relocation_all_species_radial_positions(tmp_path,plane):
     assert record['output_plane_distance_mm']==plane
     assert record['input_plane_distance_mm']==272.1
     assert 'nominal-source radial position scaling' in record['method']
-    assert audit['modification']['algorithm']=='model13-focal-spot-radial-plane-v4'
+    assert audit['modification']['algorithm']=='model13-focal-spot-particle-selection-v5'
 
 
 def test_plane_relocation_after_spread_and_chunk_invariance(tmp_path):
@@ -268,3 +268,73 @@ def test_relocated_multifile_selection_and_source_plane(case,tmp_path):
             counts.append([s['record']['selected_particles'] for s in src.selections.values()])
         assert counts[0]==counts[1]
         assert src.info['plane_distance_mm']==200.
+
+
+@pytest.mark.parametrize('names', [
+    ['photon'], ['electron'], ['positron'], ['photon','electron'],
+    ['photon','positron'], ['electron','positron'], ['photon','electron','positron']])
+def test_particle_selection_histories_and_properties(tmp_path,names):
+    b=sample(tmp_path)
+    cfg=config(tmp_path,[b]);cfg.write_text('particle_types='+json.dumps(names)+'\n'+cfg.read_text())
+    out=modify(cfg,chunk_size=1)
+    result,audit=read(out/'base'/'part');original,_=read(b)
+    codes=[{'photon':1,'electron':2,'positron':3}[n] for n in names]
+    keep=np.isin(abs(original['code']),codes)
+    ids=np.cumsum(original['increment'])[keep]
+    assert np.array_equal(np.cumsum(result['increment']),ids)
+    assert np.array_equal(result['energy']<0,result['increment']>0)
+    for field in ('code','x','y','u','v','weight','latch'):
+        assert np.array_equal(result[field],original[field][keep])
+    assert np.array_equal(abs(result['energy']),abs(original['energy'][keep]))
+    assert audit['original_histories']==12
+    assert audit['nonempty_histories']==len(np.unique(ids))
+    assert audit['trailing_empty_histories']==12-ids[-1]
+    assert read_header(out/'base'/'part')['counts']['PARTICLES']==len(ids)
+    meta=json.loads((out/'base'/'part.modification.json').read_text())
+    assert meta['selection_counts']['excluded_particles']==len(original)-len(result)
+
+
+@pytest.mark.parametrize('value',['[]','["photon","photon"]','["muon"]','[true]','"photon"'])
+def test_invalid_particle_selection(tmp_path,value):
+    cfg=config(tmp_path,[sample(tmp_path)])
+    cfg.write_text('particle_types='+value+'\n'+cfg.read_text())
+    with pytest.raises(ValueError,match='particle_types'):modify(cfg)
+    assert not (tmp_path/'out').exists()
+
+
+def test_empty_particle_selection_part_rejected(tmp_path):
+    b=make_iaea(tmp_path/'photons',[(1,-1.,0.,0.,0.,0.,.05,2,0)])
+    cfg=config(tmp_path,[b]);cfg.write_text('particle_types=["electron"]\n'+cfg.read_text())
+    with pytest.raises(ValueError,match='selects no records'):modify(cfg)
+    assert not (tmp_path/'out').exists()
+
+
+def test_selected_history_chunk_invariance_and_spread(tmp_path):
+    bases=[sample(tmp_path),sample(tmp_path,'second',.2)]
+    outputs=[]
+    for size in (1,100):
+        cfg=config(tmp_path,bases,'[variants.base]\nsource_sigma_x_mm=1',name=f'out{size}')
+        cfg.write_text('particle_types=["photon"]\n'+cfg.read_text())
+        outputs.append(modify(cfg,chunk_size=size))
+    for b in bases:
+        a,_=read(outputs[0]/'base'/b.name);c,_=read(outputs[1]/'base'/b.name)
+        assert a.tobytes()==c.tobytes()
+    audits=[]
+    list(validated_parts([read_header(outputs[0]/'base'/b.name) for b in bases],audits))
+    assert len(audits)==2
+
+
+def test_selection_preserves_backward_species_and_history_across_chunks(tmp_path):
+    b=make_iaea(tmp_path/'part',[
+        (1,-1.,0.,0.,0.,0.,.05,2,0),
+        (-2,.2,0.,0.,0.,0.,.03,0,1),
+        (1,.3,0.,0.,0.,0.,.05,0,2),
+        (2,.4,0.,0.,0.,0.,.04,0,3),
+        (-3,-.5,0.,0.,0.,0.,.06,3,4)])
+    cfg=config(tmp_path,[b]);cfg.write_text('particle_types=["electron","positron"]\n'+cfg.read_text())
+    out=modify(cfg,chunk_size=1);a,audit=read(out/'base'/'part')
+    assert a['code'].tolist()==[-2,2,-3]
+    assert a['increment'].tolist()==[2,0,3]
+    assert a['energy'].tolist()==pytest.approx([-.2,.4,-.5])
+    assert audit['nonempty_histories']==2
+    assert audit['trailing_empty_histories']==7

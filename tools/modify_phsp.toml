@@ -6,7 +6,11 @@ file_bases = [
   "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3",
   "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4",
 ]
-output_dir = "../outputs/modified_phase_space1"
+output_dir = "../outputs/modified_phase_space2"
+# Retain any nonempty combination; applies to every variant and both directions.
+# Example photon-only: ["photon"]; charged particles: ["electron", "positron"].
+# Original histories (including those made empty) and particle weights are preserved.
+particle_types = ["electron"] # ["photon", "electron", "positron"]
 seed = 12345 # Modification seed, independent of TOPAS transport seeds.
 
 # Source-to-output-plane distance, mm; applies to every variant and species.
@@ -30,10 +34,15 @@ output_plane_distance_mm = 272.1
 # source_sigma_x_mm = 0.0
 # source_sigma_y_mm = 0.0
 
-[variants.focal_spread_2mm_axial]
+[variants.electron]
 spectrum = "baseline"
-source_sigma_x_mm = 1.0 # Example only; effective spread ADDED at source plane.
-source_sigma_y_mm = 2.0 # Positions stay fixed unless output plane changes.
+source_sigma_x_mm = 0.0
+source_sigma_y_mm = 0.0
+
+# [variants.focalspread]
+# spectrum = "baseline"
+# source_sigma_x_mm = 1.0 # Example only; effective spread ADDED at source plane.
+# source_sigma_y_mm = 2.0 # Positions stay fixed unless output plane changes.
 
 # [variants.joint_example]
 # spectrum = "peak_plus_0p1"
