@@ -34,10 +34,10 @@ output_plane_distance_mm = 272.1
 # source_sigma_x_mm = 0.0
 # source_sigma_y_mm = 0.0
 
-[variants.electron]
-spectrum = "baseline"
-source_sigma_x_mm = 0.0
-source_sigma_y_mm = 0.0
+# [variants.electron]
+# spectrum = "baseline"
+# source_sigma_x_mm = 0.0
+# source_sigma_y_mm = 0.0
 
 # [variants.focalspread]
 # spectrum = "baseline"
@@ -54,3 +54,44 @@ source_sigma_y_mm = 0.0
 # C1 = 1.120813595915993
 # C2 = 4.174177344588501
 # C3 = -1.276750337246975
+
+# Automatic model-13 coefficients for a requested continuum-peak change.
+# Existing peak_minus_0p1/peak_plus_0p1 presets are ±0.1 MeV, NOT ±10%.
+# Use exactly one shift unit. Zero keeps the baseline coefficients.
+# [variants.peak_example]
+# spectrum = "peak_shift"
+# peak_shift_mev = 0.05
+# Alternative: peak_shift_percent = 10.0
+# The fitted smooth-model peak can differ from the empirical output peak.
+# Every normal run writes output_dir/spectrum_report.pdf plus per-variant PNG/CSV.
+
+# [variants.mpv_minus0p05]
+# spectrum = "peak_shift"
+# peak_shift_mev = -0.05
+
+# [variants.mpv_minus0p1]
+# spectrum = "peak_shift"
+# peak_shift_mev = -0.1
+
+# [variants.mpv_plus0p05]
+# spectrum = "peak_shift"
+# peak_shift_mev = 0.05
+
+# [variants.mpv_plus0p1]
+# spectrum = "peak_shift"
+# peak_shift_mev = 0.1
+
+# [variants.mpv_plus1]
+# spectrum = "peak_shift"
+# peak_shift_mev = 1.0
+
+# Smooth exponential photon-spectrum tilt. Positive alpha hardens; negative softens.
+# alpha is in MeV^-1 (not a percentage). Does not change particle energies.
+# Total photon weight and protected 511-keV weights remain unchanged.
+# Choose a fresh output_dir. Alpha is separate from the peak-shift modes.
+# [variants.harder]
+# spectrum = "alpha"
+# alpha_per_mev = 0.1
+
+[variants.electron]
+spectrum = "baseline"

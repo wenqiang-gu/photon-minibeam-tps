@@ -16,7 +16,7 @@ import numpy as np
 # Support direct invocation from a repository checkout.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from minibeam.sources.iaea import read_header, validated_chunks
-from tools.phsp_modifications import BASE, PRESETS, VERSION, Spectrum, photon_masks, spread, transition, relocate_plane
+from tools.phsp_modifications import BASE, PRESETS, VERSION, Spectrum, photon_masks, spread, transition, relocate_plane, fit_peak, continuum_peak, spectrum_for_variant, AlphaSpectrum
 
 
 def digest(value):
@@ -63,9 +63,31 @@ def configuration(path):
     resolved={}
     for name,v in variants.items():
         if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]*',name):raise ValueError(f'Unsafe variant name: {name}')
-        if not isinstance(v,dict) or set(v)-{'spectrum','C1','C2','C3','source_sigma_x_mm','source_sigma_y_mm'}:raise ValueError(f'Invalid variant keys: {name}')
+        if not isinstance(v,dict) or set(v)-{'spectrum','C1','C2','C3','source_sigma_x_mm','source_sigma_y_mm','peak_shift_mev','peak_shift_percent','alpha_per_mev'}:raise ValueError(f'Invalid variant keys: {name}')
         choice=v.get('spectrum','baseline')
-        if choice=='custom':
+        peak_keys=[k for k in ('peak_shift_mev','peak_shift_percent') if k in v]
+        fit=None
+        if 'alpha_per_mev' in v and choice!='alpha':
+            raise ValueError('alpha_per_mev requires spectrum="alpha"')
+        if choice=='alpha':
+            if peak_keys or any(k in v for k in ('C1','C2','C3')):
+                raise ValueError('alpha cannot be combined with peak shifts or C1/C2/C3')
+            if 'alpha_per_mev' not in v:raise ValueError('alpha_per_mev is required for spectrum="alpha"')
+            alpha=numeric(v['alpha_per_mev'],'alpha_per_mev');AlphaSpectrum(alpha)
+            if 'photon' not in particle_types:raise ValueError('alpha requires photon in particle_types')
+            p=BASE
+        elif choice=='peak_shift':
+            if len(peak_keys)!=1 or any(k in v for k in ('C1','C2','C3')):
+                raise ValueError('peak_shift requires exactly one of peak_shift_mev or peak_shift_percent, without C1/C2/C3')
+            if 'photon' not in particle_types:raise ValueError('peak_shift requires photon in particle_types')
+            key=peak_keys[0];value=numeric(v[key],key);base_peak=continuum_peak(BASE)
+            target=base_peak+value if key=='peak_shift_mev' else base_peak*(1+value/100)
+            p,fit=fit_peak(target)
+            fit.update(baseline_peak_MeV=base_peak,requested_setting=key,requested_value=value)
+            print(f'{name}: fitted continuum peak {base_peak:.6f} → {fit["actual_peak_MeV"]:.6f} MeV; C1/C2/C3={p}',flush=True)
+        elif peak_keys:
+            raise ValueError('Peak shift settings require spectrum="peak_shift"')
+        elif choice=='custom':
             p=tuple(numeric(v[k],k) for k in ('C1','C2','C3'))
             if not (0<=p[0]<=10 and 0<=p[1]<=20 and -1.999<=p[2]<=10):raise ValueError('Custom parameters outside study bounds: C1 0..10, C2 0..20, C3 -1.999..10')
         else:
@@ -76,6 +98,8 @@ def configuration(path):
         sy=numeric(v.get('source_sigma_y_mm',0),'source_sigma_y_mm')
         if min(sx,sy)<0:raise ValueError('Source sigmas must be nonnegative')
         resolved[name]=dict(spectrum=choice,parameters=p,source_sigma_x_mm=sx,source_sigma_y_mm=sy)
+        if fit is not None:resolved[name]['peak_fit']=fit
+        if choice=='alpha':resolved[name]['alpha_per_mev']=alpha
     if len({n.casefold() for n in resolved})!=len(resolved):raise ValueError('Case-insensitive variant name collision')
     return bases,output,seed,resolved,plane,particle_types
 
@@ -131,10 +155,12 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
     if dry_run:
         print('Dry run: headers checked; particle validation and output writing not performed.')
         return output
-    models={n:Spectrum(v['parameters']) for n,v in variants.items()}
+    models={n:spectrum_for_variant(v) for n,v in variants.items()}
     weighted={n:0. for n in variants};tapered={n:0. for n in variants};original=protected_total=0.;protected_count=0
     ranges={n:[float('inf'),0.] for n in variants}
     positive_weight_ranges={n:[float('inf'),0.] for n in variants}
+    edges=np.linspace(0,5.75,576)
+    before_hist=np.zeros(575);after_hist={n:np.zeros(575) for n in variants}
     audits=[];hashes=set()
     for i,info in enumerate(infos):
         print(f'Pass 1: validating {i+1}/{len(infos)}: {info["base"].name}',flush=True)
@@ -144,6 +170,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
             a=a[np.isin(np.abs(a['code'].astype(int)),codes)]
             selected_count+=len(a)
             photon,protected,use=photon_masks(a)
+            before_hist+=np.histogram(np.abs(a['energy'][photon]),bins=edges,weights=a['weight'][photon].astype(float))[0]
             w=a['weight'][use].astype(float);e=np.abs(a['energy'][use].astype(float))
             original+=float(w.sum());protected_total+=float(a['weight'][protected].astype(float).sum());protected_count+=int(protected.sum())
             for n,model in models.items():
@@ -204,7 +231,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
             protected_photon_weight=protected_total,protected_photon_count=protected_count,
             raw_multiplier_range=ranges[n],model_endpoint_MeV=5.75,protected_band_MeV=[.51049895,.51149895],
             low_energy_policy={'unchanged_through_MeV':.1,'full_ratio_from_MeV':.2,
-                'transition':'smoothstep cubic; exp(t*log(model_ratio)) * (1+(correction-1)*t)'}) for n in variants}
+                'transition':('smoothstep cubic; exp(t*alpha_per_mev*E) * (1+(correction-1)*t)' if variants[n]['spectrum']=='alpha' else 'smoothstep cubic; exp(t*log(model_ratio)) * (1+(correction-1)*t)')}) for n in variants}
         for i,info in enumerate(infos):
             print(f'Pass 2: writing variants for {i+1}/{len(infos)}: {info["base"].name}',flush=True)
             stats={n:stat_init() for n in variants};sha={n:hashlib.sha256() for n in variants};audit={}
@@ -239,6 +266,8 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
                         bounds[n][0]=np.minimum(bounds[n][0],[b['x'].min(),b['y'].min()])
                         bounds[n][1]=np.maximum(bounds[n][1],[b['x'].max(),b['y'].max()])
                         after[n]+=float(b['weight'][use].astype(float).sum())
+                        photons=np.abs(b['code'].astype(int))==1
+                        after_hist[n]+=np.histogram(np.abs(b['energy'][photons]),bins=edges,weights=b['weight'][photons].astype(float))[0]
                         stats_update(stats[n],b);raw=b.tobytes();streams[n].write(raw);sha[n].update(raw)
             if audit!=audits[i]:raise ValueError('Input changed between passes')
             for n in variants:
@@ -268,11 +297,14 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
             summary=dict(common[n],outputs=all_outputs[n],output_unprotected_weight=after[n],
                 photon_weight_rounding_residual=after[n]-original,direction_exceptions=exceptions[n])
             (staging/n/'modification.json').write_text(json.dumps(summary,indent=2,allow_nan=False)+'\n')
+        from tools.phsp_report import write_spectrum_report
+        write_spectrum_report(staging,variants,edges,before_hist,after_hist,correction,particle_types)
         if output.exists():raise ValueError('Output already exists')
         staging.rename(output);staging=None
     finally:
         if staging is not None:shutil.rmtree(staging)
         lock.unlink()
+    print(f'Spectrum PDF: {output / "spectrum_report.pdf"}')
     for n in variants:
         print(f'\n{n}: PHASE_SPACE_FILE_BASES = '+repr([str(output/n/b.name) for b in bases]))
     return output

@@ -338,3 +338,61 @@ def test_selection_preserves_backward_species_and_history_across_chunks(tmp_path
     assert a['energy'].tolist()==pytest.approx([-.2,.4,-.5])
     assert audit['nonempty_histories']==2
     assert audit['trailing_empty_histories']==7
+
+
+@pytest.mark.parametrize('shift',[-.05,0,.05])
+def test_automatic_peak_fit(shift):
+    from tools.phsp_modifications import fit_peak,continuum_peak
+    target=continuum_peak(BASE)+shift
+    params,record=fit_peak(target)
+    assert continuum_peak(params)==pytest.approx(target,abs=1e-4)
+    assert record['actual_peak_MeV']==pytest.approx(target,abs=1e-4)
+    if shift==0:assert params==BASE
+
+
+@pytest.mark.parametrize('keys',[
+ 'peak_shift_mev=true','peak_shift_percent=-100',
+ 'peak_shift_mev=0.1\npeak_shift_percent=10',
+ 'peak_shift_mev=0.1\nC1=1','peak_shift_mev=10'])
+def test_invalid_peak_requests(tmp_path,keys):
+    cfg=config(tmp_path,[sample(tmp_path)],'[variants.test]\nspectrum="peak_shift"\n'+keys)
+    with pytest.raises(ValueError):modify(cfg)
+    assert not (tmp_path/'out').exists()
+
+
+def test_peak_percent_and_pdf_actual_histograms(tmp_path):
+    from tools.phsp_modifications import continuum_peak
+    cfg=config(tmp_path,[sample(tmp_path)],'[variants.test]\nspectrum="peak_shift"\npeak_shift_percent=10')
+    out=modify(cfg,chunk_size=2)
+    a,_=read(out/'test'/'part')
+    meta=json.loads((out/'test'/'modification.json').read_text())
+    assert meta['variant']['peak_fit']['actual_peak_MeV']==pytest.approx(continuum_peak(BASE)*1.1,abs=1e-4)
+    assert (out/'spectrum_report.pdf').read_bytes().startswith(b'%PDF')
+    h=np.loadtxt(out/'test'/'spectrum_histogram.csv',delimiter=',',skiprows=1)
+    photons=abs(a['code'])==1
+    assert h[:,3].sum()==pytest.approx(a['weight'][photons].astype(float).sum())
+    assert h[:,2].sum()==pytest.approx(h[:,3].sum(),rel=1e-7)
+    assert (out/'test'/'spectrum_report.png').is_file()
+
+
+@pytest.mark.parametrize('alpha',[-.2,0,.1,.4])
+def test_alpha_conservation_protection_and_report(tmp_path,alpha):
+    b=make_iaea(tmp_path/'part',[(1,-.05,0,0,0,0,.05,1,0),
+       (1,.15,0,0,0,0,.05,0,1),(1,-.51099895,0,0,0,0,.05,1,2),
+       (1,-1,0,0,0,0,.05,1,3),(1,-4,0,0,0,0,.05,1,4),(2,.2,0,0,0,0,.05,0,5)])
+    out=modify(config(tmp_path,[b],f'[variants.test]\nspectrum="alpha"\nalpha_per_mev={alpha}'),chunk_size=2)
+    a,_=read(b);r,_=read(out/'test'/'part');photon,protected,use=photon_masks(a)
+    assert np.array_equal(r['weight'][protected|~photon],a['weight'][protected|~photon])
+    assert r['weight'][photon].astype(float).sum()==pytest.approx(a['weight'][photon].astype(float).sum(),rel=1e-7)
+    for key in a.dtype.names:
+        if key!='weight':assert np.array_equal(a[key],r[key])
+    if alpha==0:assert a.tobytes()==r.tobytes()
+    elif alpha>0:assert r['weight'][4]/a['weight'][4]>r['weight'][3]/a['weight'][3]
+    assert (out/'spectrum_report.pdf').read_bytes().startswith(b'%PDF')
+
+
+@pytest.mark.parametrize('keys', ['alpha_per_mev=true','alpha_per_mev=3','',
+    'alpha_per_mev=0.1\npeak_shift_mev=0.1','alpha_per_mev=0.1\nC1=1'])
+def test_invalid_alpha_config(tmp_path,keys):
+    with pytest.raises(ValueError):
+        modify(config(tmp_path,[sample(tmp_path)],'[variants.x]\nspectrum="alpha"\n'+keys))

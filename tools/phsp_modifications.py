@@ -127,3 +127,70 @@ def spread(a, ids, sx, sy, distance, seed):
     good=np.flatnonzero(use)[~bad]
     a['u'][good]=uv[~bad,0];a['v'][good]=uv[~bad,1]
     return int(bad.sum())
+
+
+def continuum_peak(parameters):
+    """Find the global mode on a dense grid, then refine its neighborhood."""
+    from scipy.optimize import minimize_scalar
+    grid=np.linspace(.01,5.75,60000)
+    i=int(np.argmax(log_continuum(grid,parameters)))
+    if i in (0,len(grid)-1):return float(grid[i])
+    return float(minimize_scalar(lambda e:-log_continuum(e,parameters),
+        bounds=(grid[i-1],grid[i+1]),method='bounded',options={'xatol':1e-12}).x)
+
+
+def fit_peak(target):
+    """Closest model-13 continuum by Hellinger distance, with requested mode.
+
+    Multistart constrained local optimization, not a proof of global optimality.
+    Endpoint and original baseline remain fixed. No fitting to particle records.
+    """
+    from scipy.optimize import minimize
+    if isinstance(target,bool) or not np.isfinite(target) or not .02 <= target <= 2.0:
+        raise ValueError('Requested continuum peak must be between 0.02 and 2.0 MeV')
+    base_peak=continuum_peak(BASE)
+    if abs(target-base_peak)<1e-10:
+        return BASE,dict(target_peak_MeV=float(target),actual_peak_MeV=base_peak,objective=0.)
+    x=np.unique(np.r_[np.geomspace(.01,.15,350),np.linspace(.15,5.75,2500)])
+    def density(p):
+        z=log_continuum(x,p);q=np.exp(z-z.max());return q/np.trapezoid(q,x)
+    q0=density(BASE)
+    def objective(p):return float(np.trapezoid((np.sqrt(density(p))-np.sqrt(q0))**2,x))
+    def slope(p):return float((log_continuum(target+1e-6,p)-log_continuum(target-1e-6,p))/2e-6)
+    solutions=[]
+    for start in [BASE,[.2,1,-1],[.05,.1,0],[2,6,-1],[1,10,1],[.5,3,-1.9]]:
+        r=minimize(objective,start,method='SLSQP',bounds=[(.00001,10),(.00001,20),(-1.999,10)],
+            constraints=[{'type':'eq','fun':slope},
+                         {'type':'ineq','fun':lambda p:log_continuum(target,p)-log_continuum(x,p)}],
+            options={'maxiter':800,'ftol':1e-11})
+        if r.success and abs(continuum_peak(r.x)-target)<1e-4:solutions.append(r)
+    if not solutions:raise ValueError(f'No feasible model-13 fit for peak {target:g} MeV; use a smaller shift')
+    best=min(solutions,key=lambda r:r.fun)
+    return tuple(float(v) for v in best.x),dict(target_peak_MeV=float(target),actual_peak_MeV=continuum_peak(best.x),
+        objective=float(best.fun),method='multistart constrained Hellinger fit; best feasible local solution')
+
+
+class AlphaSpectrum:
+    """Exponential photon tilt with the modifier's smooth fluence correction.
+
+    Above 0.2 MeV: A exp(alpha E). Below 0.1 MeV: identity.
+    The caller excludes the protected 511-keV band from correction statistics.
+    """
+    def __init__(self, alpha):
+        if isinstance(alpha,bool) or not np.isfinite(alpha) or not -2<=alpha<=2:
+            raise ValueError('alpha_per_mev must be finite and within -2..2 MeV^-1')
+        self.alpha=float(alpha);self.identity=self.alpha==0
+
+    def ratio(self,energy,correction=1.):
+        e=np.asarray(energy,dtype=float)
+        if np.any(~np.isfinite(e)|(e<.01)|(e>5.75)):
+            raise ValueError('Alpha modification requires photon energies in 0.01–5.75 MeV')
+        t=transition(e)
+        r=np.exp(t*self.alpha*e)*(1+(correction-1)*t)
+        if np.any(~np.isfinite(r)|(r<=0)):raise ValueError('Invalid alpha spectrum multiplier')
+        return r
+
+
+def spectrum_for_variant(variant):
+    if variant['spectrum']=='alpha':return AlphaSpectrum(variant['alpha_per_mev'])
+    return Spectrum(variant['parameters'])

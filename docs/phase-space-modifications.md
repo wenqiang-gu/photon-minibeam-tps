@@ -463,3 +463,90 @@ do not reduce its resolution. Outside-window record counts and weights are saved
 in `summary.json`. Normalization includes all selected downstream photons; the
 visible bins therefore need not sum to one. Unlike an unweighted particle scatter
 plot, each bin sums particle statistical weights rather than counting dots.
+
+## Automatic continuum-peak variations and output PDF
+
+The original `peak_minus_0p1` and `peak_plus_0p1` presets mean **−0.1 and
++0.1 MeV**, not percentages. They remain available unchanged. To calculate
+coefficients for another variation, configure a variant like:
+
+```toml
+[variants.peak_up_005]
+spectrum = "peak_shift"
+peak_shift_mev = 0.05
+
+[variants.peak_down_10percent]
+spectrum = "peak_shift"
+peak_shift_percent = -10.0
+```
+
+Use exactly one shift setting and no explicit C1/C2/C3. Shifts are relative to
+the fixed baseline continuum mode (approximately **0.33637 MeV**): +10% requests
+0.37001 MeV, whereas +0.1 MeV requests 0.43637 MeV. Zero uses baseline coefficients.
+The modifier solves for C1/C2/C3 by the multistart constrained Hellinger-distance
+method described above, with fixed 5.75 MeV endpoint. It independently checks the
+mode on a dense energy grid. This is a best feasible local fit, not a unique
+solution or a new fit to your input particles. Targets outside 0.02–2 MeV or
+infeasible requests fail clearly; this numerical interval is not a clinically
+validated range. Photon selection is required for this mode.
+
+The coefficients and target/achieved model peaks are printed and saved in each
+variant's provenance. Existing safeguards remain: photon energies do not change,
+weights below 0.1 MeV and in the protected 511 keV band remain unchanged, and the
+unprotected total photon weight is conserved. Consequently the **actual weighted
+particle-spectrum peak need not equal the model target**. Focal spread and plane
+settings remain independently configurable. The 511 keV peak is not the continuum
+peak being tuned.
+
+Every successful normal run writes **`output_dir/spectrum_report.pdf`**, one page
+per variant, plus `spectrum_report.png` and `spectrum_histogram.csv` in each
+variant directory. Pages compare baseline/requested model continua, input/output
+statistical-weight spectra over the full range and a close-up containing the
+511 keV line, and the applied weight multiplier. Histograms use 10 keV bins and
+are accumulated from the retained input photons and the actual float32 output
+weights across all input parts, without another file scan. Their common input
+normalization preserves amplitude comparisons. Baseline/custom records beyond
+the displayed 0–5.75 MeV range are not included in those histograms. No uncertainty
+bands are inferred. Variants with no selected photons explicitly say so.
+
+Reports are published together with the modified files; a failed report does not
+publish a partial output directory. Dry-run computes requested coefficients and
+checks headers but does not create a PDF because actual particle distributions
+have not been scanned. Use a fresh output directory and review the PDF before
+preparing transport projects.
+
+## Exponential spectral tilt (alpha)
+
+```toml
+[variants.harder]
+spectrum = "alpha"
+alpha_per_mev = 0.1
+```
+
+Positive alpha hardens the photon spectrum; negative alpha softens it. Zero
+preserves all original weights. This acts directly on the empirical particles,
+not by fitting new C1/C2/C3 values. It cannot be combined with a peak shift or
+custom coefficients in the same variant. Photon selection is required. The
+numerical study range is −2 to +2 MeV⁻¹; infeasible normalization or unrepresentable
+weights fail before publication. This range is not a calibration recommendation.
+
+For unprotected photons the multiplier is
+`exp(t(E) * alpha * E) * (1 + (A - 1) * t(E))`, where `t` is the existing smoothstep
+from 0.1 to 0.2 MeV. A single A is solved from the actual retained photon statistical
+weights across all input files to preserve their total weight. Above 0.2 MeV this
+is exactly `A * exp(alpha * E)`. The linear taper of A follows the existing
+modifier correction convention; it differs slightly within 0.1–0.2 MeV from the
+fully exponential normalization used in the earlier illustrative alpha plot.
+Photons at or below 0.1 MeV and within ±0.0005 MeV of 0.51099895 MeV keep their
+original weights **exactly**. The entire line-region bin height can still change
+because neighboring continuum particles share a histogram bin. Electrons and
+positrons are not reweighted. Energies, original-history counts and history
+normalization do not change.
+
+The PDF includes actual before/after weighted histograms from the input/output
+records, alpha, the solved correction and the applied multiplier. Its smooth
+baseline-times-multiplier panel is only a model illustration: the correction is
+computed from actual particles, so that panel need not integrate to one. The
+empirical histogram panels are the cross-check of the generated source. No new
+file scan is needed. Use a fresh output directory; existing enabled variants and
+source settings are not automatically changed.
