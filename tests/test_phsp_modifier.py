@@ -211,7 +211,7 @@ def test_plane_relocation_all_species_radial_positions(tmp_path,plane):
     assert record['output_plane_distance_mm']==plane
     assert record['input_plane_distance_mm']==272.1
     assert 'nominal-source radial position scaling' in record['method']
-    assert audit['modification']['algorithm']=='model13-focal-spot-particle-selection-v5'
+    assert audit['modification']['algorithm']=='model13-focal-spot-electron-scale-v6'
 
 
 def test_plane_relocation_after_spread_and_chunk_invariance(tmp_path):
@@ -396,3 +396,75 @@ def test_alpha_conservation_protection_and_report(tmp_path,alpha):
 def test_invalid_alpha_config(tmp_path,keys):
     with pytest.raises(ValueError):
         modify(config(tmp_path,[sample(tmp_path)],'[variants.x]\nspectrum="alpha"\n'+keys))
+
+
+@pytest.mark.parametrize('spectrum',['baseline','alpha'])
+def test_electron_scale_and_spectrum(tmp_path,spectrum):
+    b=sample(tmp_path)
+    extra='\nalpha_per_mev=0.2' if spectrum=='alpha' else ''
+    variants=(f'[variants.control]\nspectrum="{spectrum}"{extra}\n'
+              f'[variants.scaled]\nspectrum="{spectrum}"{extra}\nelectron_weight_scale=2.637')
+    out=modify(config(tmp_path,[b],variants),chunk_size=1)
+    control,ca=read(out/'control'/'part');scaled,sa=read(out/'scaled'/'part')
+    electron=np.abs(control['code'].astype(int))==2
+    assert np.array_equal(scaled['weight'][~electron],control['weight'][~electron])
+    assert scaled['weight'][electron]==pytest.approx(control['weight'][electron]*2.637)
+    for key in IAEA_DTYPE.names:
+        if key!='weight':assert np.array_equal(scaled[key],control[key])
+    assert ca['trailing_empty_histories']==sa['trailing_empty_histories']
+    summary=json.loads((out/'scaled'/'modification.json').read_text())
+    assert summary['electron_weight_scale']==2.637
+    assert summary['output_electron_weight']==pytest.approx(summary['input_electron_weight']*2.637)
+    assert sa['modification']['output_electron_weight']==summary['output_electron_weight']
+    assert read_header(out/'scaled'/'part')['counts']['ORIG_HISTORIES']==read_header(b)['counts']['ORIG_HISTORIES']
+
+
+@pytest.mark.parametrize('value',['true','0','-1','nan','inf','"2.637"'])
+def test_invalid_electron_scale(tmp_path,value):
+    b=sample(tmp_path)
+    with pytest.raises(ValueError,match='electron_weight_scale'):
+        modify(config(tmp_path,[b],f'[variants.base]\nelectron_weight_scale={value}'))
+    assert not (tmp_path/'out').exists()
+
+
+@pytest.mark.parametrize('value',['1e300','1e-300'])
+def test_electron_scale_numeric_failure_atomic(tmp_path,value):
+    b=sample(tmp_path)
+    with pytest.raises(ValueError,match='electron weight overflow/underflow'):
+        modify(config(tmp_path,[b],f'[variants.base]\nelectron_weight_scale={value}'))
+    assert not (tmp_path/'out').exists()
+    assert not list(tmp_path.glob('out.tmp-*'))
+
+
+def test_excluded_electrons_scale_no_effect(tmp_path,capsys):
+    b=sample(tmp_path)
+    cfg=config(tmp_path,[b],'[variants.base]\nelectron_weight_scale=2.637')
+    cfg.write_text('particle_types=["photon","positron"]\n'+cfg.read_text())
+    out=modify(cfg)
+    assert 'has no effect' in capsys.readouterr().out
+    a,_=read(out/'base'/'part')
+    original,_=read(b)
+    expected=original[np.abs(original['code'].astype(int))!=2]
+    assert np.array_equal(a['weight'],expected['weight'])
+    summary=json.loads((out/'base'/'modification.json').read_text())
+    assert summary['input_electron_weight']==summary['output_electron_weight']==0
+
+
+def test_electron_scale_multifile_backward_zero_and_identity(tmp_path):
+    bases=[sample(tmp_path),make_iaea(tmp_path/'second',[
+        (-2,-.4,.1,0,0,0,.05,2,7),(2,.8,0,0,0,0,0.,0,8)])]
+    variants='[variants.identity]\nelectron_weight_scale=1.0\n[variants.scaled]\nelectron_weight_scale=2.637'
+    out=modify(config(tmp_path,bases,variants),chunk_size=1)
+    infos=[]
+    for b in bases:
+        original,_=read(b);unchanged,_=read(out/'identity'/b.name)
+        assert unchanged.tobytes()==original.tobytes()
+        scaled,_=read(out/'scaled'/b.name)
+        mask=np.abs(original['code'].astype(int))==2
+        assert scaled['weight'][mask]==pytest.approx(original['weight'][mask]*2.637)
+        infos.append(read_header(out/'scaled'/b.name))
+    audits=[];list(validated_parts(infos,audits))
+    summary=json.loads((out/'scaled'/'modification.json').read_text())
+    assert summary['input_electron_weight']==pytest.approx(.1)
+    assert summary['output_electron_weight']==pytest.approx(.2637)
+    assert summary['output_electron_weight']==pytest.approx(sum(a['modification']['output_electron_weight'] for a in audits))

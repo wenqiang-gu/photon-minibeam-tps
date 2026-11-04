@@ -8,7 +8,7 @@ PRESETS = {'baseline': BASE,
     'peak_plus_0p1': (0.9823102326993479, 5.408931306994932, -1.6902537833662665)}
 LINE = .51099895
 PROTECTION = .0005
-VERSION = 'model13-focal-spot-particle-selection-v5'
+VERSION = 'model13-focal-spot-electron-scale-v6'
 LOW_ENERGY_KEEP = .1
 LOW_ENERGY_FULL = .2
 

@@ -3,7 +3,7 @@ import numpy as np
 from tools.phsp_modifications import BASE, Spectrum, log_continuum, log_integral, continuum_peak, spectrum_for_variant
 
 
-def write_spectrum_report(folder,variants,edges,before,after,corrections,particle_types):
+def write_spectrum_report(folder,variants,edges,before,after,corrections,particle_types,electron_input=0.0,electron_output=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -49,8 +49,13 @@ def write_spectrum_report(folder,variants,edges,before,after,corrections,particl
                    'Peak is the smooth model mode, not a guarantee for the empirical output histogram. No particle energies are shifted.\n'
                    'Low-energy photons and the 511 keV band retain weights; original histories unchanged. Fit is a local optimum, not a calibration.\n'
                    'Baseline/custom inputs outside 0–5.75 MeV are omitted from histograms; nonbaseline energies outside model support are rejected.')
+            scale=v.get('electron_weight_scale',1.0)
+            written=(electron_output or {}).get(name,0.0)
+            notes+=(f'\nIncident electron scale: {scale:g}; retained weight {electron_input:.8g} -> {written:.8g}. '
+                    'No mixed-species renormalization; secondary electrons are not scaled.')
+            if 'electron' not in particle_types:notes+=' Electrons excluded: no effect.'
             fig.text(.06,.025,notes,fontsize=8,va='bottom')
-            fig.tight_layout(rect=(0,.15,1,.91));pdf.savefig(fig)
+            fig.tight_layout(rect=(0,.18,1,.91));pdf.savefig(fig)
             fig.savefig(folder/name/'spectrum_report.png',dpi=140);plt.close(fig)
             np.savetxt(folder/name/'spectrum_histogram.csv',np.column_stack((edges[:-1],edges[1:],before,after[name])),
                        delimiter=',',header='energy_low_MeV,energy_high_MeV,input_weight,output_weight',comments='')

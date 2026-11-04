@@ -6,11 +6,12 @@ file_bases = [
   "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3",
   "~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4",
 ]
-output_dir = "../outputs/modified_phase_space2"
+output_dir = "../outputs/modified_phase_space4"
 # Retain any nonempty combination; applies to every variant and both directions.
 # Example photon-only: ["photon"]; charged particles: ["electron", "positron"].
-# Original histories (including those made empty) and particle weights are preserved.
-particle_types = ["electron"] # ["photon", "electron", "positron"]
+# Original histories (including those made empty) are preserved. Selection alone
+# preserves weights; spectrum/electron scaling can modify retained weights.
+particle_types = ["photon", "electron", "positron"]
 seed = 12345 # Modification seed, independent of TOPAS transport seeds.
 
 # Source-to-output-plane distance, mm; applies to every variant and species.
@@ -93,5 +94,34 @@ output_plane_distance_mm = 272.1
 # spectrum = "alpha"
 # alpha_per_mev = 0.1
 
-[variants.electron]
-spectrum = "baseline"
+# Optional per-variant incident-electron statistical weight multiplier.
+# Default is 1.0; positive finite values only. Photons/positrons and histories
+# are unchanged; no renormalization follows this scaling. Secondary electrons
+# generated during TOPAS transport are not scaled. If electrons are excluded
+# by particle_types, this setting has no effect.
+# [variants.alpha02_electron_tuned]
+# spectrum = "alpha"
+# alpha_per_mev = 0.2
+# electron_weight_scale = 2.637
+# Fit example: ROI ±25 mm, normalization at 100 mm, excluding measurement 0/1 mm.
+
+[variants.focal_spread_0_0_bestfit_alpha_electron]
+electron_weight_scale = 2.637
+spectrum = "alpha"
+alpha_per_mev = 0.2
+source_sigma_x_mm = 0
+source_sigma_y_mm = 0
+
+[variants.focal_spread_1_2_bestfit_alpha_electron]
+electron_weight_scale = 2.637
+spectrum = "alpha"
+alpha_per_mev = 0.2
+source_sigma_x_mm = 1.0
+source_sigma_y_mm = 2.0
+
+[variants.focal_spread_1p5_3_bestfit_alpha_electron]
+electron_weight_scale = 2.637
+spectrum = "alpha"
+alpha_per_mev = 0.2
+source_sigma_x_mm = 1.5
+source_sigma_y_mm = 3.0

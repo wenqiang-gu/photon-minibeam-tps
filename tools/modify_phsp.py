@@ -63,7 +63,7 @@ def configuration(path):
     resolved={}
     for name,v in variants.items():
         if not re.fullmatch('[A-Za-z0-9][A-Za-z0-9_-]*',name):raise ValueError(f'Unsafe variant name: {name}')
-        if not isinstance(v,dict) or set(v)-{'spectrum','C1','C2','C3','source_sigma_x_mm','source_sigma_y_mm','peak_shift_mev','peak_shift_percent','alpha_per_mev'}:raise ValueError(f'Invalid variant keys: {name}')
+        if not isinstance(v,dict) or set(v)-{'spectrum','C1','C2','C3','source_sigma_x_mm','source_sigma_y_mm','peak_shift_mev','peak_shift_percent','alpha_per_mev','electron_weight_scale'}:raise ValueError(f'Invalid variant keys: {name}')
         choice=v.get('spectrum','baseline')
         peak_keys=[k for k in ('peak_shift_mev','peak_shift_percent') if k in v]
         fit=None
@@ -94,10 +94,14 @@ def configuration(path):
             if choice not in PRESETS:raise ValueError(f'Unknown spectrum: {choice}')
             if any(k in v for k in ('C1','C2','C3')):raise ValueError('C1/C2/C3 require spectrum="custom"')
             p=PRESETS[choice]
+        electron_scale=numeric(v.get('electron_weight_scale',1.0),'electron_weight_scale')
+        if electron_scale<=0:raise ValueError('electron_weight_scale must be positive')
+        if 'electron' not in particle_types and electron_scale!=1:
+            print(f'{name}: electron_weight_scale has no effect: electrons are excluded',flush=True)
         sx=numeric(v.get('source_sigma_x_mm',0),'source_sigma_x_mm')
         sy=numeric(v.get('source_sigma_y_mm',0),'source_sigma_y_mm')
         if min(sx,sy)<0:raise ValueError('Source sigmas must be nonnegative')
-        resolved[name]=dict(spectrum=choice,parameters=p,source_sigma_x_mm=sx,source_sigma_y_mm=sy)
+        resolved[name]=dict(electron_weight_scale=electron_scale,spectrum=choice,parameters=p,source_sigma_x_mm=sx,source_sigma_y_mm=sy)
         if fit is not None:resolved[name]['peak_fit']=fit
         if choice=='alpha':resolved[name]['alpha_per_mev']=alpha
     if len({n.casefold() for n in resolved})!=len(resolved):raise ValueError('Case-insensitive variant name collision')
@@ -161,6 +165,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
     positive_weight_ranges={n:[float('inf'),0.] for n in variants}
     edges=np.linspace(0,5.75,576)
     before_hist=np.zeros(575);after_hist={n:np.zeros(575) for n in variants}
+    electron_input=0.0
     audits=[];hashes=set()
     for i,info in enumerate(infos):
         print(f'Pass 1: validating {i+1}/{len(infos)}: {info["base"].name}',flush=True)
@@ -169,6 +174,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         for a,ids in validated_chunks(info,audit,chunk_size):
             a=a[np.isin(np.abs(a['code'].astype(int)),codes)]
             selected_count+=len(a)
+            electron_input+=float(a['weight'][np.abs(a['code'].astype(int))==2].astype(float).sum())
             photon,protected,use=photon_masks(a)
             before_hist+=np.histogram(np.abs(a['energy'][photon]),bins=edges,weights=a['weight'][photon].astype(float))[0]
             w=a['weight'][use].astype(float);e=np.abs(a['energy'][use].astype(float))
@@ -221,12 +227,13 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         staging=Path(tempfile.mkdtemp(prefix=output.name+'.tmp-',dir=output.parent))
         for n in variants:(staging/n).mkdir()
         offset=0;all_outputs={n:[] for n in variants};after={n:0. for n in variants};exceptions={n:0 for n in variants}
+        electron_output={n:0.0 for n in variants}
         common={n:dict(schema=1,algorithm=VERSION,seed=seed,variant=variants[n],inputs=audits,
-            particle_types=particle_types,
-            particle_selection_policy="retain selected species; preserve original histories and weights; rebuild history flags/increments",
+            particle_types=particle_types,electron_weight_scale=variants[n]['electron_weight_scale'],
+            particle_selection_policy="retain selected species; preserve original histories; weights follow spectrum and electron-scale settings; rebuild history flags/increments",
             plane_relocation=dict(input_plane_distance_mm=first['plane_distance_mm'],output_plane_distance_mm=plane,
                 method='nominal-source radial position scaling after focal spread; x/y multiplied by output/input distance; directions unchanged; all species; float32 positions'),
-            normalization='Preserve selected ordered-input photon weight; low-energy and 511-keV protected weights unchanged; smoothly tapered global correction; original histories unchanged',
+            normalization='Preserve selected ordered-input photon weight; low-energy and 511-keV protected weights unchanged; smoothly tapered global correction; original histories unchanged; scale incident electrons independently without subsequent renormalization',
             global_continuum_correction=correction[n],original_unprotected_weight=original,
             protected_photon_weight=protected_total,protected_photon_count=protected_count,
             raw_multiplier_range=ranges[n],model_endpoint_MeV=5.75,protected_band_MeV=[.51049895,.51149895],
@@ -235,6 +242,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
         for i,info in enumerate(infos):
             print(f'Pass 2: writing variants for {i+1}/{len(infos)}: {info["base"].name}',flush=True)
             stats={n:stat_init() for n in variants};sha={n:hashlib.sha256() for n in variants};audit={}
+            sum_electron_part=0.0
             previous_history=0;selected_nonempty=0;selected_count=0
             bounds={n:np.array([[np.inf,np.inf],[-np.inf,-np.inf]]) for n in variants}
             with ExitStack() as stack:
@@ -253,6 +261,7 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
                     previous_history=int(ids[-1])
                     selected_nonempty+=int(np.count_nonzero(a['increment']))
                     selected_count+=len(a)
+                    sum_electron_part+=float(a['weight'][np.abs(a['code'].astype(int))==2].astype(float).sum())
                     _,_,use=photon_masks(a)
                     for n,v in variants.items():
                         b=a.copy()
@@ -261,6 +270,16 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
                             with np.errstate(over='ignore',under='ignore'):stored=w.astype(np.float32)
                             if np.any(~np.isfinite(stored)) or np.any((a['weight'][use]>0)&(stored<=0)):raise ValueError('Output weight overflow/underflow')
                             b['weight'][use]=stored
+                        electrons=np.abs(b['code'].astype(int))==2
+                        # Scale incident electrons only, after photon normalization.
+                        # Never normalize the mixed-species weight back afterward.
+                        if v['electron_weight_scale']!=1:
+                            with np.errstate(over='ignore',under='ignore'):
+                                stored=(a['weight'][electrons].astype(float)*v['electron_weight_scale']).astype(np.float32)
+                            if np.any(~np.isfinite(stored)) or np.any((a['weight'][electrons]>0)&(stored<=0)):
+                                raise ValueError(f'{n}: electron weight overflow/underflow')
+                            b['weight'][electrons]=stored
+                        electron_output[n]+=float(b['weight'][electrons].astype(float).sum())
                         exceptions[n]+=spread(b,ids+offset,v['source_sigma_x_mm'],v['source_sigma_y_mm'],info['plane_distance_mm'],seed)
                         relocate_plane(b,info['plane_distance_mm'],plane)
                         bounds[n][0]=np.minimum(bounds[n][0],[b['x'].min(),b['y'].min()])
@@ -273,6 +292,9 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
             for n in variants:
                 part=info['base'].name
                 provenance=dict(common[n],set_id=digest(common[n]),part_index=i,output_basename=part,output_phsp_sha256=sha[n].hexdigest(),
+                    electron_weight_scale=variants[n]['electron_weight_scale'],
+                    output_electron_weight=stats[n][1]['weight'],
+                    input_electron_weight=sum_electron_part,
                     selection_counts=dict(retained_particles=selected_count,excluded_particles=audit['records']-selected_count,
                         nonempty_histories=selected_nonempty,empty_histories=info['counts']['ORIG_HISTORIES']-selected_nonempty,
                         trailing_empty_histories=info['counts']['ORIG_HISTORIES']-previous_history))
@@ -294,11 +316,12 @@ def modify(config, *, dry_run=False, chunk_size=100_000):
             offset+=info['counts']['ORIG_HISTORIES']
         for n in variants:
             if not np.isclose(after[n],original,rtol=1e-7,atol=1e-12):raise ValueError('Float32 output failed photon-fluence conservation')
-            summary=dict(common[n],outputs=all_outputs[n],output_unprotected_weight=after[n],
+            summary=dict(common[n],electron_weight_scale=variants[n]['electron_weight_scale'],
+                input_electron_weight=electron_input,output_electron_weight=electron_output[n],outputs=all_outputs[n],output_unprotected_weight=after[n],
                 photon_weight_rounding_residual=after[n]-original,direction_exceptions=exceptions[n])
             (staging/n/'modification.json').write_text(json.dumps(summary,indent=2,allow_nan=False)+'\n')
         from tools.phsp_report import write_spectrum_report
-        write_spectrum_report(staging,variants,edges,before_hist,after_hist,correction,particle_types)
+        write_spectrum_report(staging,variants,edges,before_hist,after_hist,correction,particle_types,electron_input,electron_output)
         if output.exists():raise ValueError('Output already exists')
         staging.rename(output);staging=None
     finally:

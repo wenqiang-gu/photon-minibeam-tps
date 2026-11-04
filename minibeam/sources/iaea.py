@@ -58,7 +58,8 @@ def read_header(base):
                 or not isinstance(modification.get('output_phsp_sha256'), str)):
             raise ValueError('Unsupported modified source provenance')
         common = {k:v for k,v in modification.items() if k not in
-                  ('set_id', 'part_index', 'output_basename', 'output_phsp_sha256', 'selection_counts')}
+                  ('set_id', 'part_index', 'output_basename', 'output_phsp_sha256', 'selection_counts',
+                   'input_electron_weight', 'output_electron_weight')}
         if hashlib.sha256(json.dumps(common,sort_keys=True,allow_nan=False).encode()).hexdigest() != modification['set_id']:
             raise ValueError('Modified source settings identity mismatch')
     return {'modification':modification,'base':base,'header':header,'data':data,'plane_distance_mm':constants[0]*10,

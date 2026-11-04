@@ -25,13 +25,40 @@ selected particles is rejected; empty IAEA particle files are not supported.
 Original-history budgets remain unchanged, including histories made empty by
 filtering. History flags and increments are rebuilt, while retained particles'
 energies, statistical weights and other properties are preserved unless a requested
-spectrum/spread/plane modification changes them. Selection does not renormalize
+spectrum/spread/plane modification or electron weight scale changes them. Selection does not renormalize
 remaining particles to compensate for discarded species. Thus photon-only and
 charged-particle-only studies use the same original-history denominator.
 Focal spread and spectrum tuning still affect photons only; plane relocation acts
 on all retained species. Provenance records the selection and per-part retained,
 excluded and empty-history counts. New outputs use algorithm version
-`model13-focal-spot-particle-selection-v5`.
+`model13-focal-spot-electron-scale-v6`.
+
+## Incident-electron weight scale
+
+Each variant accepts `electron_weight_scale = 1.0` (the default). Use a positive,
+finite number; Booleans and zero are rejected. Use `particle_types` to remove
+electrons instead. For example:
+
+```toml
+[variants.alpha02_electron_tuned]
+spectrum = "alpha"
+alpha_per_mev = 0.2
+electron_weight_scale = 2.637
+```
+
+The modifier multiplies retained incident-electron statistical weights after
+photon spectrum normalization, with **no subsequent mixed-species renormalization**.
+Photon weights (including protected 511 keV photons), positrons, particle counts,
+energies, trajectories and original histories are unchanged by this scale.
+It does not scale secondary electrons produced during TOPAS transport.
+If electrons are excluded, the setting has no effect and this is reported.
+
+The example factor is a study fit for alpha0.2, ROI ±25 mm, normalization at
+100 mm and exclusion of the 0/1 mm measurement points, not a universal calibration.
+Provenance and the spectrum PDF record the factor and retained electron weight
+totals before/after scaling; headers describe the actual written weights.
+Unrepresentable float32 weights abort publication. Existing outputs are untouched;
+choose a fresh output directory to apply the scale.
 
 ## Low-energy protection
 
