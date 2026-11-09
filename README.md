@@ -151,6 +151,54 @@ beam along +Y. Planning isocenter is the entrance-surface center. A 100 mm squar
 field with 5 mm bixels contains 400 bixels simulated in one combined job. `WATER`
 is a whole-phantom calculation ROI, not a tumor or the beamlet-selection mask.
 
+### Record downstream phase space
+
+Set `PHASE_SPACE_RECORDERS` in `water_phantom.py` to record particles while dose
+scoring continues. The default `[]` disables recording. For example:
+
+```python
+PHASE_SPACE_RECORDERS = [
+    {"name": "after_jaws", "location": "jaw_exit"},
+    {"name": "after_slits", "location": "collimator_exit",
+     "offset_mm": 0.01, "size_mm": [300.0, 300.0]},
+    # For comparisons with hardware absent, specify a source distance instead:
+    # {"name": "reference", "location": "source_distance",
+    #  "source_distance_mm": 800.0},
+]
+```
+
+Device references are `mlc_exit`, `jaw_exit`, and `collimator_exit`; each requires
+its device to be enabled (`ENABLE_COLLIMATOR=True` for the slit collimator).
+Device-exit surfaces sit 0.01 mm downstream by default. Their positions come from
+the resolved geometry; for tilted devices, the plane is beyond the downstream-most
+envelope extent. All recording planes are perpendicular to the beam axis, centered
+on that axis, and use material-free parallel worlds. `size_mm` is the full transverse
+width/height, defaulting to 300 × 300 mm; particles crossing outside that finite area
+are not recorded. `source_distance` requires a positive `source_distance_mm` and
+does not accept `offset_mm`. Names must be unique identifiers. Overlapping films
+are rejected. `inspect` prints resolved positions without generating particle files.
+
+Prepare a fresh project after changing recorder settings, then execute TOPAS.
+Each plane writes binary `results/beam_000001_phsp_NAME.header` and `.phsp` files.
+Additional batches write their own pairs under `batches/batch_NNN/results/`,
+including batches added later using `add_batches.sh`. Existing files are not
+overwritten. Collection still processes dose CSV files; phase-space files are
+auxiliary outputs and are not required to collect dose.
+
+The scorer saves all particle species crossing downstream, with particle weights
+and history-boundary flags, and includes empty transported histories in sequence.
+Tracks continue into the phantom; this records downstream crossings in the full
+simulation, not a phantom-free head source, and can include particles returning
+downstream after backscatter. Particle positions/directions use **TOPAS World
+coordinates**, not coordinates relative to the recording film. The manifest records
+surface positions in beam, LPS and TOPAS coordinates and the original versus
+transported history counts. For source replay, TOPAS header histories can exclude
+upstream empty histories omitted by our replay: retain the saved
+`normalization_histories` and `upstream_omitted_histories` when reusing output.
+Never normalize by particle count. Repeated transport batches reuse the same fixed
+upstream source sample; they are not independent source realizations. Automated
+downstream replay and patient-workflow recorder settings are not included.
+
 Both workflows support `PHASE_SPACE_SELECTION="field"` (default),
 `"all_forward"` for unrestricted downstream phase-space replay, or
 `"outside_field"` for its complement outside the selected bixel union.

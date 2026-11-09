@@ -16,6 +16,7 @@ class RunSettings:
     num_threads: int = 1
     enable_opengl: bool = False
     phase_space_precheck: bool = True
+    phase_space_recorders: list[dict] = field(default_factory=list)
     enforce_ct_crop_protection: bool = True
     ct_crop_voxels: dict | None = None
     dose_spacing_mm: tuple | None = None

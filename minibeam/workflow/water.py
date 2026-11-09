@@ -2,7 +2,7 @@
 
 from importlib.resources import files
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import SimpleITK as sitk
@@ -39,6 +39,7 @@ class WaterSettings:
     random_seed: int = 12345
     # None preserves TOML field dimensions for existing package callers.
     field_size_mm: float | None = None
+    phase_space_recorders: list[dict] = field(default_factory=list)
 
 
 # SHARED PLANNING HELPERS
@@ -94,6 +95,15 @@ def build_planning(settings, project_dir):
     grid = scoring_grid(ct, settings.dose_spacing_mm)
     check_matrad_grids(ct.grid, grid)
     stf = enrich_stf(generate_stf(ct, cst, plan), geometry)
+    from minibeam.topas.phase_space_recording import validate_recorders, resolve_recorders
+    from minibeam.geometry.assembly import TreatmentHead
+    from minibeam.geometry.coordinates import patient_center
+    recorders = validate_recorders(settings.phase_space_recorders)
+    if recorders:
+        plan.prop_dose_calc['phase_space_recorders'] = recorders
+        for record in resolve_recorders(recorders, stf.beams[0], (TreatmentHead(None),), patient_center(ct)):
+            print(f"Phase-space recorder '{record['name']}': {record['resolved_source_distance_mm']:.6f} mm from source; "
+                  f"beam Z={record['surface_position_beam_mm'][2]:.6f} mm; size {record['size_mm']} mm; Binary; one file pair per job/batch")
     metadata = dict(synthetic='water', selected_targets=['WATER'], water_measurement=dict(
         ssd_mm=sad, field_reference='water entrance surface / native isocenter plane',
         surface_center_lps_mm=[0., 0., 0.], phantom_size_mm=settings.phantom_size_mm,

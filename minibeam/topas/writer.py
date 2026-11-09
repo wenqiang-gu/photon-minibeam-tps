@@ -15,6 +15,7 @@ from ..geometry.coordinates import grid_dict, patient_center
 from ..materials import material_bytes
 from .scoring import scorer_parameters
 from .contracts import JobContext
+from .phase_space_recording import resolve_recorders, film_parameters, scorer_parameters as phase_space_scorer_parameters
 from ..geometry.devices import beam_frame_parameters, validate_device_fragment
 
 class JobWriter:
@@ -86,6 +87,9 @@ class JobWriter:
               f"CSV estimate {nvox*job_count*100/1024**3:.3f} GiB.")
         if self.seed + job_count - 1 > 2**31-1:
             raise ValueError('Per-job random seed overflows TOPAS integer range')
+        # Reject invalid recorder locations before scanning a large source file.
+        recorder_planes = {bi: resolve_recorders(self.phase_space_recorders, beam, self.devices, center)
+                           for bi, beam in enumerate(stf.beams, 1)}
         if builtin:
             # Reject physical placement errors before scanning a potentially large file.
             for bi, beam in enumerate(stf.beams,1):
@@ -134,6 +138,10 @@ class JobWriter:
                             fragments.append(part.text)
                             device_records.append({"name": device.name, "parameters": part.record})
                         fragments.append(fragment.text)
+                    if recorder_planes[bi]:
+                        fragments.append(film_parameters(recorder_planes[bi]))
+                        for recorder in recorder_planes[bi]:
+                            world_half = max(world_half, extent(recorder['bounds_topas_mm']))
                     text = "\n".join(fragments)
                     components = re.findall(r's:Ge/([^/]+)/Type\s*=', text + "\n" + self.geometry.text)
                     if len(components) != len(set(components)) or set(components) & {"Patient", "World", "CTOutline"}:
@@ -158,6 +166,16 @@ class JobWriter:
                            "output": f"results/{name}.csv",
                            "source": source, "source_name": description.source_name,
                            "source_description": json_data(asdict(description)), "devices": device_records}
+                    if recorder_planes[bi]:
+                        from copy import deepcopy
+                        job['phase_space_recorders'] = deepcopy(recorder_planes[bi])
+                        for recorder in job['phase_space_recorders']:
+                            recorder.update(scorer=f'PhaseSpace_{name}_{recorder["name"]}',
+                                output_base=f'results/{name}_phsp_{recorder["name"]}',
+                                normalization_histories=self.histories, transported_histories=transport_histories,
+                                upstream_omitted_histories=self.histories-transport_histories,
+                                source_normalization=description.normalization,
+                                normalization_note='Header counts TOPAS transported histories; preserve normalization_histories and upstream omitted histories for reuse. Transport batches reuse the fixed source sample and are not independent source realizations.')
                     if self.enable_opengl and not self.water:
                         job["visualization_slice"] = axial_slice_for_isocenter(ct, beam.iso_center)
                     jobs.append(job)
@@ -218,6 +236,8 @@ class JobWriter:
         # Hash the configuration before adding its fingerprint to scorer names.
         for job in definition["jobs"]:
             job["scorer"] += "_" + request_id
+            for recorder in job.get('phase_space_recorders', []):
+                recorder['scorer'] += '_' + request_id
         root = Path(bundle_dir or self.bundle_dir).resolve()
         jobs = definition["jobs"]
         if root.exists() and any(root.iterdir()):
@@ -257,6 +277,8 @@ class JobWriter:
                      f'i:Ts/Seed = {job["seed"]}',
                      f'i:So/{job["source_name"]}/NumberOfHistoriesInRun = {job["histories"]}',
                      scorer_parameters(job, definition["dose_grid"])]
+            if job.get('phase_space_recorders'):
+                lines.append(phase_space_scorer_parameters(job['phase_space_recorders']))
             if "visualization_slice" in job:
                 # Graphics visibility only: never restrict transport voxels.
                 index = job["visualization_slice"]["slice_index_1based"]

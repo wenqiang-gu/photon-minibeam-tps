@@ -21,8 +21,8 @@ from minibeam.workflow.cli import parse_stage_arguments, dispatch
 # Paths are relative to the directory from which you run this script.
 
 # Patient and target
-DICOM_DIR = "dicom_9306087_fine"
-TARGET = "PTV2017fw"
+DICOM_DIR = "DICOM/AVENGER/CT_series_203_omar_350mm"
+TARGET = "BODY"
 
 # Native steering and job grouping
 GANTRY_ANGLES = [0.0] # [45.0, 135.0, 225.0, 315.0]
@@ -30,7 +30,7 @@ COUCH_ANGLES = None  # zero for each gantry angle
 SAD_MM = 1000.0
 BIXEL_WIDTH_MM = 5.0
 ONLY_CENTRAL_BEAMLET = False  # False: all target-selected beamlets
-BEAMLET_EXECUTION = "separate"  # "separate" or "combined": one aggregate job per beam
+BEAMLET_EXECUTION = "combined"  # "separate" or "combined": one aggregate job per beam
 # Physical coordinates in mm: +x Left, +y Posterior, +z Superior.
 # None uses the selected target's centroid, not the center of the CT volume.
 ISO_CENTER_LPS_MM = None
@@ -62,7 +62,7 @@ PHASE_SPACE_FILE_BASES = [
 # Photons for point; total original histories across the ordered files for phase_space.
 # Consume part1 first, then later parts as needed; no recycling.
 # Try 1_000_000 for an initial phase-space validation run.
-HISTORIES_PER_JOB = 680_000_000
+HISTORIES_PER_JOB = 10_000_000 # 680_000_000
 # Total batches initially prepared; add_batches.sh can append more later.
 # Reuses saved source particles; only TOPAS transport seeds change.
 NUMBER_OF_BATCHES = 5
@@ -99,8 +99,8 @@ COLLIMATOR_SHIFT_FRACTIONS = [0.0] # [0.0, 0.25, 0.50, 0.75]
 # Example: x=(40, 300) retains indices 40..299 (260 voxels).
 # Equivalent MATLAB indices and inclusive TOPAS limits: 41..300.
 # These indices are NOT DICOM InstanceNumber values.
-# CT_CROP_VOXELS = None retains the complete CT. Original DICOM files remain unchanged.
-CT_CROP_VOXELS = {"x": (60, 280), "y": (60, 280), "z": (0, 160)}
+CT_CROP_VOXELS = None # retains the complete CT. Original DICOM files remain unchanged.
+# CT_CROP_VOXELS = {"x": (60, 280), "y": (60, 280), "z": (0, 160)}
 # Syntax illustration only, NOT safe bounds for this patient: it cuts CouchSurface.
 # {"x": (40, 300), "y": (30, 290), "z": (0, 160)}
 # True: reject clipping any ROI or material flagged by the air checks.

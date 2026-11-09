@@ -12,11 +12,11 @@ from minibeam.workflow.cli import parse_stage_arguments, dispatch
 # Water boundaries: X/Z centered on zero; entrance Y=0, downstream face Y=size.
 PHANTOM_SIZE_MM = 200.0
 PHANTOM_SPACING_MM = 2.0
-SSD_MM = 900.0 # 1000.0
+SSD_MM = 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
 # Must be an integer multiple of BIXEL_WIDTH_MM.
-FIELD_SIZE_MM = 20.0 # 100.0
+FIELD_SIZE_MM = 100.0
 BIXEL_WIDTH_MM = 5.0
 # One perpendicular beam, with planning isocenter at the entrance center.
 # Combined mode simulates the entire tiled field in ONE job.
@@ -38,27 +38,21 @@ PHASE_SPACE_SELECTION = "all_forward"
 # TOPAS requires this when PhaseSpaceIncludeEmptyHistories=True.
 TOPAS_PHASE_SPACE_PRECHECK = False
 PHASE_SPACE_FILE_BASES = [
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
-    'outputs/modified_phase_space4/focal_spread_1_2_bestfit_alpha_electron/ELEKTA_PRECISE_6mv_part1',
-    'outputs/modified_phase_space4/focal_spread_1_2_bestfit_alpha_electron/ELEKTA_PRECISE_6mv_part2',
-    'outputs/modified_phase_space4/focal_spread_1_2_bestfit_alpha_electron/ELEKTA_PRECISE_6mv_part3',
-    'outputs/modified_phase_space4/focal_spread_1_2_bestfit_alpha_electron/ELEKTA_PRECISE_6mv_part4',
+    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
+    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
+    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
+    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
+    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part1',
+    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part2',
+    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part3',
+    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part4',
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.
 HISTORIES_PER_JOB = 680_000_000
 # Total batches initially prepared; add_batches.sh can append more later.
 # Reuses saved source particles; only TOPAS transport seeds change.
-BATCHES_BY_FIELD_SIZE = {
-    100: 20,
-    40: 100,
-    20: 400,
-}
-NUMBER_OF_BATCHES = BATCHES_BY_FIELD_SIZE[FIELD_SIZE_MM]
-# NUMBER_OF_BATCHES = 20
+NUMBER_OF_BATCHES = 100
 RANDOM_SEED = 12345
 TOPAS_THREADS_PER_JOB = 8
 
@@ -66,6 +60,15 @@ TOPAS_THREADS_PER_JOB = 8
 # FIELD_SIZE_MM overrides its field.width_mm/height_mm without editing the TOML.
 GEOMETRY_CONFIG = None
 ENABLE_COLLIMATOR = False  # MLC/jaws retain their TOML settings
+# Optional named downstream phase-space surfaces; [] disables recording.
+# Device locations: "mlc_exit", "jaw_exit", "collimator_exit" (device must be enabled).
+# Or: {"name": "reference", "location": "source_distance", "source_distance_mm": 757.01}
+# Each recorder writes Binary .header/.phsp files separately for every batch.
+PHASE_SPACE_RECORDERS = []
+# PHASE_SPACE_RECORDERS = [
+#     {"name": "collimator_exit", "location": "collimator_exit",
+#      "offset_mm": 0.01, "size_mm": [300.0, 300.0]},
+# ]
 DOSE_SPACING_MM = None  # native spacing; optionally (dx, dy, dz) in mm
 ENABLE_OPENGL = False
 # Exposure of the combined field, in saved source units (not MU).
@@ -89,6 +92,7 @@ def planning_settings():
         topas_threads_per_job=TOPAS_THREADS_PER_JOB,
         geometry_config=GEOMETRY_CONFIG,
         enable_collimator=ENABLE_COLLIMATOR,
+        phase_space_recorders=PHASE_SPACE_RECORDERS,
         dose_spacing_mm=DOSE_SPACING_MM,
         enable_opengl=ENABLE_OPENGL,
     ))

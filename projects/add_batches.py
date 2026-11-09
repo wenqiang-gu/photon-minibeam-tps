@@ -117,7 +117,7 @@ def inventory(root, manifest, verify=True):
             raise ValueError('Batch column count mismatch')
         expected_files = set()
         for original, job in zip(zero['jobs'], record['jobs']):
-            changes = {'seed', 'scorer', 'output', 'parameter_file', 'batch_id'}
+            changes = {'seed', 'scorer', 'output', 'parameter_file', 'batch_id', 'phase_space_recorders'}
             if {k:v for k,v in job.items() if k not in changes} != {k:v for k,v in original.items() if k not in changes}:
                 raise ValueError('Batch physics or column mapping differs from base')
             seed = job['seed']
@@ -129,6 +129,8 @@ def inventory(root, manifest, verify=True):
                 raise ValueError('Invalid batch job paths')
             if job['scorer'] != original['scorer'] + '_' + bid:
                 raise ValueError('Invalid batch scorer identity')
+            if job.get('phase_space_recorders', []) != batch_recorders(original, bid, prefix):
+                raise ValueError('Invalid batch phase-space recorder metadata')
             expected_files.add(job['parameter_file'])
             if verify:
                 text = within(root, job['parameter_file']).read_text()
@@ -144,6 +146,13 @@ def inventory(root, manifest, verify=True):
     return batches
 
 
+def batch_recorders(original, bid, directory):
+    """Retain plane/normalization metadata; change only identity and output path."""
+    return [dict(r, scorer=r['scorer']+'_'+bid,
+                 output_base=directory+'/results/'+Path(r['output_base']).name)
+            for r in original.get('phase_space_recorders', [])]
+
+
 def render(text, original, job):
     # Fail closed for external/custom templates. Change only these known parameters.
     pattern = r'(?m)^i:Ts/Seed\s*=\s*' + str(original['seed']) + r'\s*$'
@@ -157,6 +166,17 @@ def render(text, original, job):
     text = text.replace(old, new)
     if 'Sc/' + original['scorer'] + '/' not in text:
         raise ValueError('Missing scorer parameters')
+    before = original.get('phase_space_recorders', [])
+    after = job.get('phase_space_recorders', [])
+    if len(before) != len(after):
+        raise ValueError('Batch phase-space recorder count mismatch')
+    for old_recorder, new_recorder in zip(before, after):
+        old_line = 's:Sc/%s/OutputFile = "%s"' % (old_recorder['scorer'], old_recorder['output_base'])
+        new_line = 's:Sc/%s/OutputFile = "%s"' % (old_recorder['scorer'], new_recorder['output_base'])
+        if text.count(old_line) != 1:
+            raise ValueError('Unsupported phase-space recorder output definition')
+        text = text.replace(old_line, new_line)
+        text = text.replace('Sc/'+old_recorder['scorer']+'/', 'Sc/'+new_recorder['scorer']+'/')
     return text.replace('Sc/' + original['scorer'] + '/', 'Sc/' + job['scorer'] + '/')
 
 
@@ -213,6 +233,8 @@ def _add(root, count, dry_run, total=None):
             job = dict(original, seed=seed, batch_id=bid, scorer=original['scorer']+'_'+bid,
                        parameter_file=directory+'/jobs/'+Path(original['parameter_file']).name,
                        output=directory+'/results/'+Path(original['output']).name)
+            if original.get('phase_space_recorders'):
+                job['phase_space_recorders'] = batch_recorders(original, bid, directory)
             texts[job['parameter_file']] = render(within(root, original['parameter_file']).read_text(), original, job)
             jobs.append(job)
         record = dict(schema_version=1, batch_id=bid, base_bundle_id=manifest['bundle_id'], jobs=jobs,

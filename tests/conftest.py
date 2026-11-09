@@ -89,6 +89,15 @@ def isolate_editable_crop_settings(monkeypatch):
     monkeypatch.setattr(patient_workflow, 'ENFORCE_CT_CROP_PROTECTION', True)
 
 
+@pytest.fixture(autouse=True)
+def isolate_editable_water_settings(monkeypatch):
+    """Keep regressions independent of a researcher's editable run settings."""
+    import water_phantom
+    for key, value in dict(FIELD_SIZE_MM=100., SSD_MM=1000., NUMBER_OF_BATCHES=1,
+                           TOPAS_PHASE_SPACE_PRECHECK=True, PHASE_SPACE_RECORDERS=[]).items():
+        monkeypatch.setattr(water_phantom, key, value)
+
+
 def physical_replay_records(path, dtype):
     """Read selected particles; validate and separate the non-transported guard."""
     import numpy as np

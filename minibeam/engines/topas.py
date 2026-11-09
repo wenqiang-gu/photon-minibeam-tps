@@ -23,6 +23,7 @@ class TOPASPhotonEngine(DoseEngineBase):
     num_threads: int = 1
     enable_opengl: bool = False
     phase_space_precheck: bool = True
+    phase_space_recorders: list[dict] | None = None
     enforce_ct_crop_protection: bool = True
     ct_crop_voxels: dict | None = None
     dose_spacing_mm: tuple | None = None
@@ -73,6 +74,9 @@ class TOPASPhotonEngine(DoseEngineBase):
             raise ValueError("phase_space_precheck must be a Boolean")
         if type(self.enable_opengl) is not bool:
             raise ValueError("enable_opengl must be a boolean")
+        from ..topas.phase_space_recording import validate_recorders
+        self.phase_space_recorders = validate_recorders(
+            [] if self.phase_space_recorders is None else self.phase_space_recorders)
         if source_model is not None and self.source_config is not None:
             raise ValueError('Use injected source_model or source_config, not both')
         if self.source_config is not None:
