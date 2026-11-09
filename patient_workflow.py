@@ -33,7 +33,8 @@ ONLY_CENTRAL_BEAMLET = False  # False: all target-selected beamlets
 BEAMLET_EXECUTION = "combined"  # "separate" or "combined": one aggregate job per beam
 # Physical coordinates in mm: +x Left, +y Posterior, +z Superior.
 # None uses the selected target's centroid, not the center of the CT volume.
-ISO_CENTER_LPS_MM = None
+# ISO_CENTER_LPS_MM = None
+ISO_CENTER_LPS_MM = (-1.0, 146.1, -385.3)
 
 # Source and simulation statistics
 SOURCE_TYPE = "phase_space"  # "point" or "phase_space"

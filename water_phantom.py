@@ -16,7 +16,7 @@ SSD_MM = 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
 # Must be an integer multiple of BIXEL_WIDTH_MM.
-FIELD_SIZE_MM = 100.0
+FIELD_SIZE_MM = 20.0
 BIXEL_WIDTH_MM = 5.0
 # One perpendicular beam, with planning isocenter at the entrance center.
 # Combined mode simulates the entire tiled field in ONE job.
@@ -59,7 +59,7 @@ TOPAS_THREADS_PER_JOB = 8
 # None selects the independent packaged water_config.toml.
 # FIELD_SIZE_MM overrides its field.width_mm/height_mm without editing the TOML.
 GEOMETRY_CONFIG = None
-ENABLE_COLLIMATOR = False  # MLC/jaws retain their TOML settings
+ENABLE_COLLIMATOR = True  # MLC/jaws retain their TOML settings
 # Optional named downstream phase-space surfaces; [] disables recording.
 # Device locations: "mlc_exit", "jaw_exit", "collimator_exit" (device must be enabled).
 # Or: {"name": "reference", "location": "source_distance", "source_distance_mm": 757.01}
