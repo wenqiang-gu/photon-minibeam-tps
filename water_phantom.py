@@ -16,7 +16,7 @@ SSD_MM = 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
 # Must be an integer multiple of BIXEL_WIDTH_MM.
-FIELD_SIZE_MM = 20.0
+FIELD_SIZE_MM = 100.0 # 20.0, 40.0, 100.0, 150.0, 200.0
 BIXEL_WIDTH_MM = 5.0
 # One perpendicular beam, with planning isocenter at the entrance center.
 # Combined mode simulates the entire tiled field in ONE job.
@@ -38,10 +38,13 @@ PHASE_SPACE_SELECTION = "all_forward"
 # TOPAS requires this when PhaseSpaceIncludeEmptyHistories=True.
 TOPAS_PHASE_SPACE_PRECHECK = False
 PHASE_SPACE_FILE_BASES = [
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
-    '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
+    # '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM/step09',
+    '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM-elekta-style/primary_sigma_x_1p0mm_680m/step09',
+
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
+    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
     # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part1',
     # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part2',
     # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part3',
@@ -59,7 +62,7 @@ TOPAS_THREADS_PER_JOB = 8
 # None selects the independent packaged water_config.toml.
 # FIELD_SIZE_MM overrides its field.width_mm/height_mm without editing the TOML.
 GEOMETRY_CONFIG = None
-ENABLE_COLLIMATOR = True  # MLC/jaws retain their TOML settings
+ENABLE_COLLIMATOR = False  # MLC/jaws retain their TOML settings
 # Optional named downstream phase-space surfaces; [] disables recording.
 # Device locations: "mlc_exit", "jaw_exit", "collimator_exit" (device must be enabled).
 # Or: {"name": "reference", "location": "source_distance", "source_distance_mm": 757.01}
@@ -68,6 +71,14 @@ PHASE_SPACE_RECORDERS = []
 # PHASE_SPACE_RECORDERS = [
 #     {"name": "collimator_exit", "location": "collimator_exit",
 #      "offset_mm": 0.01, "size_mm": [300.0, 300.0]},
+# ]
+# PHASE_SPACE_RECORDERS = [
+#     {
+#         "name": "collimator_entrance",
+#         "location": "source_distance",
+#         "source_distance_mm": 656.99,
+#         "size_mm": [300.0, 300.0],
+#     },
 # ]
 DOSE_SPACING_MM = None  # native spacing; optionally (dx, dy, dz) in mm
 ENABLE_OPENGL = False

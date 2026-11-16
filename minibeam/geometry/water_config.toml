@@ -24,7 +24,7 @@ model = "simple" # "simple": two continuous blocks; "leaves" enables the CSV/RTP
 # SELECTOR (leaves only): CSV or DICOM RTPLAN; static shape applied to workflow beams.
 shape_source = "csv" # or "rtplan"
 # PATH (leaves only): relative to this TOML, or absolute; resolved during preparation.
-shape_file = "mlc_shape_example.csv" # relative to this TOML; absolute paths also work
+shape_file = "mlc_opening_1cm.csv" # relative to this TOML; absolute paths also work
 # IDENTIFIER (RTPLAN only): DICOM BeamNumber, not the workflow beam index.
 shape_beam_number = 1 # DICOM BeamNumber (RTPLAN only)
 # INDEX (RTPLAN only): zero-based control point, with inherited positions.
