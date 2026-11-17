@@ -16,7 +16,7 @@ SSD_MM = 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
 # Must be an integer multiple of BIXEL_WIDTH_MM.
-FIELD_SIZE_MM = 100.0 # 20.0, 40.0, 100.0, 150.0, 200.0
+FIELD_SIZE_MM = 40.0 # 20.0, 40.0, 100.0, 150.0, 200.0
 BIXEL_WIDTH_MM = 5.0
 # One perpendicular beam, with planning isocenter at the entrance center.
 # Combined mode simulates the entire tiled field in ONE job.
@@ -39,16 +39,7 @@ PHASE_SPACE_SELECTION = "all_forward"
 TOPAS_PHASE_SPACE_PRECHECK = False
 PHASE_SPACE_FILE_BASES = [
     # '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM/step09',
-    '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM-elekta-style/primary_sigma_x_1p0mm_680m/step09',
-
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part1',
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part2',
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part3',
-    # '~/Local/MCGPU/TOPAS/Elekta_Precise_6MV/ELEKTA_PRECISE_6mv_part4',
-    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part1',
-    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part2',
-    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part3',
-    # 'outputs/modified_phase_space2/electron/ELEKTA_PRECISE_6mv_part4',
+    '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM-elekta-style/primary_sigma_x_0p5mm_y_0p75mm_680m/step09',
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.
@@ -80,7 +71,7 @@ PHASE_SPACE_RECORDERS = []
 #         "size_mm": [300.0, 300.0],
 #     },
 # ]
-DOSE_SPACING_MM = None  # native spacing; optionally (dx, dy, dz) in mm
+DOSE_SPACING_MM = (1, 1, 2) # None: native spacing; optionally (dx, dy, dz) in mm
 ENABLE_OPENGL = False
 # Exposure of the combined field, in saved source units (not MU).
 FORWARD_WEIGHT = 1.0
