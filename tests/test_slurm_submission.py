@@ -177,3 +177,21 @@ def test_old_python_message():
         str(SCRIPTS/'submit_topas.py')],capture_output=True,text=True)
     assert run.returncode!=0
     assert 'requires Python 3.8 or newer' in run.stderr
+
+
+def test_offline_worker_status(tmp_path, capsys):
+    root = bundle(tmp_path/'setup')
+    submit.main(['--status', str(root)])
+    assert 'No recorded worker statuses' in capsys.readouterr().out
+    for batch_id, state in [('batch_000', 'succeeded'), ('batch_001', 'failed')]:
+        folder = root/'batches'/batch_id
+        folder.mkdir(parents=True)
+        (folder/'batch.json').write_text(json.dumps(dict(batch_id=batch_id)))
+        status = root/'job_status'/batch_id
+        status.mkdir(parents=True)
+        (status/'job.status').write_text(state+'\n')
+    submit.main(['--status', str(root)])
+    assert capsys.readouterr().out.splitlines() == ['batch_000/job\tsucceeded', 'batch_001/job\tfailed']
+    submit.main([str(folder), '--status'])
+    assert capsys.readouterr().out.strip() == 'batch_001/job\tfailed'
+    assert not (root/'slurm').exists()

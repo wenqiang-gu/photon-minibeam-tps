@@ -17,6 +17,13 @@ import subprocess
 import uuid
 
 
+# This sibling module is standard-library only; cluster nodes need no package.
+try:
+    import add_batches as batches
+except ImportError:
+    from projects import add_batches as batches
+
+
 def positive(value):
     if not re.fullmatch(r'[1-9][0-9]*', str(value)):
         raise argparse.ArgumentTypeError('must be a positive integer')
@@ -84,12 +91,7 @@ def thread_setting(job, root, cache=None):
     return None if found is None else found[1]
 
 
-def discover(root, dry_run=False, additional_batches=()):
-    # This sibling module is standard-library only; cluster nodes need no package.
-    try:
-        import add_batches as batches
-    except ImportError:
-        from projects import add_batches as batches
+def resolve_selection(root, additional_batches):
     base, selected_batch = batches.locate(root)
     selected_ids = [selected_batch] if selected_batch else []
     if additional_batches and not selected_batch:
@@ -106,6 +108,30 @@ def discover(root, dry_run=False, additional_batches=()):
     roots = [within(base, e['directory']) for e in read_json(base/'study.json')['setups']] if (base/'study.json').is_file() else [base]
     if not roots or len(set(roots)) != len(roots):
         raise ValueError('Study has no setups or duplicate setup directories')
+    return roots, selected_ids
+
+
+def print_worker_status(root, additional_batches):
+    roots, selected_ids = resolve_selection(root, additional_batches)
+    for bundle in roots:
+        if not (bundle/'manifest.json').is_file():
+            raise ValueError(f'Missing setup manifest: {bundle}')
+        if len(roots) > 1:
+            print(bundle)
+        status_dir = bundle/'job_status'
+        folders = ([status_dir / batch_id for batch_id in selected_ids] if selected_ids
+                   else sorted(status_dir.glob('batch_*')))
+        found = False
+        for folder in folders:
+            for path in sorted(folder.glob('*.status')):
+                print(f'{folder.name}/{path.stem}\t{path.read_text().strip()}')
+                found = True
+        if not found:
+            print('No recorded worker statuses.')
+
+
+def discover(root, dry_run=False, additional_batches=()):
+    roots, selected_ids = resolve_selection(root, additional_batches)
     tasks = []
     for bundle in roots:
         manifest = read_json(bundle/'manifest.json')
@@ -191,8 +217,13 @@ def main(argv=None):
     parser.add_argument('--cpus-per-task',type=positive,help='Require CPUs to match inferred TOPAS threads; fallback when absent')
     parser.add_argument('--default-cpus',type=positive,default=1,help=argparse.SUPPRESS)
     parser.add_argument('--dry-run',action='store_true',help='Validate and show submission; write nothing and do not call sbatch')
+    parser.add_argument('--status', action='store_true',
+                        help='Print the last recorded worker status for each job with a status file and exit')
     args = parser.parse_args(argv)
     root, *additional = [path.expanduser().resolve() for path in args.directories]
+    if args.status:
+        print_worker_status(root, additional)
+        return
     if not args.topas_env:
         raise ValueError('Set --topas-env or TOPAS_ENV (or DEFAULT_TOPAS_ENV in the shell script)')
     env = Path(args.topas_env).expanduser().resolve()
