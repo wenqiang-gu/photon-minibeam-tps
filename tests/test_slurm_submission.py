@@ -52,12 +52,13 @@ def test_study_submission_worker_and_history(tmp_path,tools,capsys):
     bins,env=tools;root=tmp_path/'study'
     a=bundle(root/'shift_000');bundle(root/'shift_025')
     (root/'study.json').write_text(json.dumps(dict(setups=[dict(directory='shift_000'),dict(directory='shift_025')])))
-    invoke(root,env,'--time','01:00:00','--mem','32000M','--partition','cpu','--job-name','test')
+    invoke(root,env,'--time','01:00:00','--mem','32000M','--partition','cpu','--job-name','test','--wait-for','9876')
     history=json.loads((a/'slurm/submissions.jsonl').read_text())
     assert history['jobs']==[dict(array_index=0,job_id='bixel_000001',batch_id='batch_000')]
     dest=Path(history['submission_directory'])
     settings=json.loads((dest/'submission.json').read_text())['settings']
     assert '--mem=32000M' in settings['command']
+    assert '--dependency=afterany:9876' in settings['command']
     topas=bins/'topas';topas.write_text('#!/bin/sh\nprintf "%s|%s|%s\\n" "$PWD" "$MOCK_TOPAS_ENV" "$1"\nexit 7\n');topas.chmod(0o755)
     run=subprocess.run(['bash',str(dest/'worker.sh'),str(dest/'tasks.tsv'),str(env)],
         env=dict(os.environ,SLURM_ARRAY_TASK_ID='1'),text=True,capture_output=True)

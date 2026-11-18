@@ -213,6 +213,8 @@ def main(argv=None):
     parser.add_argument('--partition',default='',help='Slurm partition')
     parser.add_argument('--exclude',default='',help='Excluded node list, e.g. rohpc[9003-9005]')
     parser.add_argument('--job-name',default='topas_general')
+    parser.add_argument('--wait-for', type=positive, metavar='JOB_ID',
+                        help='Wait until this Slurm job or entire array finishes, regardless of exit status')
     parser.add_argument('--topas-env',default=os.environ.get('TOPAS_ENV',''),help='Environment script; defaults to TOPAS_ENV')
     parser.add_argument('--cpus-per-task',type=positive,help='Require CPUs to match inferred TOPAS threads; fallback when absent')
     parser.add_argument('--default-cpus',type=positive,default=1,help=argparse.SUPPRESS)
@@ -261,6 +263,8 @@ def main(argv=None):
     for name in ['mem','partition','exclude']:
         if getattr(args,name):
             command.append(f'--{name}={clean(getattr(args,name))}')
+    if args.wait_for is not None:
+        command.append(f'--dependency=afterany:{args.wait_for}')
     command += [str(destination/'worker.sh'),str(destination/'tasks.tsv'),str(env)]
     print(f'{len(tasks)} tasks; {cpus} CPUs/task; throttle {args.throttle}; time {args.time}')
     print(f"Thread inference: {sum(t['inferred_threads'] is not None for t in tasks)} inputs; others use explicit fallback wrappers.")

@@ -68,6 +68,7 @@ for your cluster. Command-line options override ordinary script defaults.
 | `--cpus-per-task N` | Must match inferred TOPAS threads when present; fallback when absent. |
 | `--dry-run` | Validate and print the submission; no manifest writes or `sbatch`. |
 | `--status` | Print saved worker states for the selected directories and exit. Works offline. |
+| `--wait-for JOB_ID` | Submit now and wait until the earlier job finishes. Use its parent array ID to wait for every task. |
 | `-h`, `--help` | Full current usage. |
 
 CPU precedence is inferred `Ts/NumberOfThreads`, then explicit CLI fallback, then
