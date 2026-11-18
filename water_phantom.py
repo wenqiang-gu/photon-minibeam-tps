@@ -16,7 +16,7 @@ SSD_MM = 1000.0
 # Square field side length at the water entrance surface (at SSD_MM).
 # Controls native bixel coverage and MLC/jaw openings.
 # Must be an integer multiple of BIXEL_WIDTH_MM.
-FIELD_SIZE_MM = 40.0 # 20.0, 40.0, 100.0, 150.0, 200.0
+FIELD_SIZE_MM = 100.0 # 20.0, 40.0, 100.0, 150.0, 200.0
 BIXEL_WIDTH_MM = 5.0
 # One perpendicular beam, with planning isocenter at the entrance center.
 # Combined mode simulates the entire tiled field in ONE job.

@@ -130,6 +130,11 @@ def test_cli_study_dry_run_and_slurm(case,tmp_path):
     one=discover(root/'batches/batch_002')
     assert len(one)==2
     assert all(t['bundle']==str(root) for t in one)
+    selected = [root/'batches/batch_002', root/'batches/batch_000']
+    tasks = discover(selected[0], additional_batches=selected[1:])
+    assert [t['batch_id'] for t in tasks] == ['batch_002'] * 2 + ['batch_000'] * 2
+    with pytest.raises(ValueError, match='Duplicate batch'):
+        discover(selected[0], additional_batches=selected)
     ast.parse(script.read_text(),feature_version=(3,8))
 
 

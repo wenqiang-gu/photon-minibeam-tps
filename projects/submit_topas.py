@@ -84,13 +84,23 @@ def thread_setting(job, root, cache=None):
     return None if found is None else found[1]
 
 
-def discover(root, dry_run=False):
+def discover(root, dry_run=False, additional_batches=()):
     # This sibling module is standard-library only; cluster nodes need no package.
     try:
         import add_batches as batches
     except ImportError:
         from projects import add_batches as batches
     base, selected_batch = batches.locate(root)
+    selected_ids = [selected_batch] if selected_batch else []
+    if additional_batches and not selected_batch:
+        raise ValueError('For multiple directories, pass individual batch directories from the same setup')
+    for path in additional_batches:
+        other_base, batch_id = batches.locate(path)
+        if other_base != base or not batch_id:
+            raise ValueError('For multiple directories, pass individual batch directories from the same setup')
+        if batch_id in selected_ids:
+            raise ValueError(f'Duplicate batch directory: {path}')
+        selected_ids.append(batch_id)
     if (base/'study.json').is_file() and (base/'manifest.json').is_file():
         raise ValueError('Ambiguous directory: both study.json and manifest.json exist')
     roots = [within(base, e['directory']) for e in read_json(base/'study.json')['setups']] if (base/'study.json').is_file() else [base]
@@ -105,9 +115,12 @@ def discover(root, dry_run=False):
             from projects.replay_audit import enforce
         enforce(bundle, manifest, write_report=not dry_run)
         records = batches.inventory(bundle, manifest) if (bundle/'batches.json').exists() else [dict(batch_id='batch_000',jobs=manifest['jobs'])]
-        if selected_batch:
-            records = [b for b in records if b['batch_id']==selected_batch]
-            if not records: raise ValueError('Batch is not indexed')
+        if selected_ids:
+            by_id = {record['batch_id']: record for record in records}
+            for batch_id in selected_ids:
+                if batch_id not in by_id:
+                    raise ValueError(f'Batch is not indexed: {batch_id}')
+            records = [by_id[batch_id] for batch_id in selected_ids]
         seen = set()
         include_cache = {}
         for record in records:
@@ -165,8 +178,9 @@ def show_history(tasks):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Submit all saved TOPAS jobs in one setup or study as a Slurm array.')
-    parser.add_argument('project',type=Path)
+    parser = argparse.ArgumentParser(description='Submit TOPAS jobs as one Slurm array.')
+    parser.add_argument('directories', type=Path, nargs='+', metavar='DIR',
+                        help='One setup or study, or one or more batch directories from the same setup')
     parser.add_argument('--throttle',type=positive,default=10,help='Maximum simultaneous array tasks (default: 10)')
     parser.add_argument('--time',default='48:00:00',help='Time limit per task (default: 48:00:00)')
     parser.add_argument('--mem',default='',help='Memory per task, e.g. 12G or 32000M')
@@ -178,14 +192,16 @@ def main(argv=None):
     parser.add_argument('--default-cpus',type=positive,default=1,help=argparse.SUPPRESS)
     parser.add_argument('--dry-run',action='store_true',help='Validate and show submission; write nothing and do not call sbatch')
     args = parser.parse_args(argv)
-    root = args.project.expanduser().resolve()
+    root, *additional = [path.expanduser().resolve() for path in args.directories]
     if not args.topas_env:
         raise ValueError('Set --topas-env or TOPAS_ENV (or DEFAULT_TOPAS_ENV in the shell script)')
     env = Path(args.topas_env).expanduser().resolve()
     if not env.is_file() or not os.access(env,os.R_OK):
         raise ValueError(f'Environment script is not readable: {env}')
     clean(env)
-    tasks = discover(root, dry_run=args.dry_run)
+    tasks = discover(root, dry_run=args.dry_run, additional_batches=additional)
+    if additional:
+        root = Path(tasks[0]['bundle'])
     for task in tasks:
         inferred = task['inferred_threads']
         if inferred is not None and args.cpus_per_task is not None and inferred != args.cpus_per_task:
