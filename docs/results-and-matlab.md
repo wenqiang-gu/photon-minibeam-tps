@@ -2,6 +2,18 @@
 
 [Main guide](../README.md) · [MATLAB utility guide](../matlab/README.md)
 
+## Dose scorer statistics
+
+New water and patient jobs report `Sum` and `Histories` by default. Set
+`TOPAS_FULL_STATISTICS = True` before preparing a project to also report
+`Mean` and `Standard_Deviation`. Added batches inherit the saved job parameters.
+Collection accepts both CSV layouts and normalizes dose using the saved history
+denominator. A single compact batch supports dose only. A full CSV preserves the per-history
+standard deviation. For one full batch, collect saves the per-column variance of
+the normalized dose estimate in `variance_of_mean.npz`. For independent-primary
+normalization, forward also saves `dose_std_error_dose_grid.mha`. With multiple completed
+equal-history batches the collector estimates voxel variance from batch variation.
+
 ## Collect or forward independently
 
 ```sh
@@ -199,8 +211,8 @@ outputs are recorded as **CSV-complete (exit status unverified)**. Do not remove
 status files while workers are running. An abruptly killed worker may leave
 `running`; retrying through the worker replaces that state.
 
-Validation stages dose and variance arrays in temporary storage (approximately
-16 bytes per voxel per completed job), then reconstructs without parsing CSVs again.
+Validation stages dose and available variance arrays in temporary storage
+(approximately 8 bytes per voxel per compact job or 16 per full-statistics job), then reconstructs without parsing CSVs again.
 Set `TMPDIR` to a disk with sufficient free space if necessary. Temporary files are
 removed after reconstruction or failure. Included/skipped batches, reasons, and
 completion evidence appear in metadata and `indexing.md`.
@@ -224,7 +236,7 @@ with `jsondecode(result.batch_metadata_json)`.
 For B > 1 batches, each column's `variance_of_mean.npz` contains
 `sum((D_b - mean(D))^2) / (B*(B-1))`. This estimates transport uncertainty conditional
 on the **fixed saved source sample**. It does not estimate or reduce finite source-
-sampling uncertainty, for phase-space or point-source replay. Single-batch outputs
+sampling uncertainty, for phase-space or point-source replay. Single-batch full-statistics outputs
 retain their legacy scorer-variance convention. Multi-batch forward standard error
 is omitted because combined covariance is not implemented. Exposure weights are not
 multiplied by the number of repeated simulations.

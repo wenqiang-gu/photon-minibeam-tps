@@ -40,6 +40,7 @@ class WaterSettings:
     # None preserves TOML field dimensions for existing package callers.
     field_size_mm: float | None = None
     phase_space_recorders: list[dict] = field(default_factory=list)
+    topas_full_statistics: bool = False
 
 
 # SHARED PLANNING HELPERS
@@ -90,6 +91,7 @@ def build_planning(settings, project_dir):
         phase_space_selection=settings.phase_space_selection,
         phase_space_precheck=settings.topas_phase_space_precheck,
         number_of_batches=settings.number_of_batches, seed=settings.random_seed,
+        full_statistics=settings.topas_full_statistics,
         histories=settings.histories_per_job, num_threads=settings.topas_threads_per_job, execution='combined',
         water=True, enable_opengl=settings.enable_opengl, dose_spacing_mm=settings.dose_spacing_mm)
     grid = scoring_grid(ct, settings.dose_spacing_mm)

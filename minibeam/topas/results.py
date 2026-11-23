@@ -77,11 +77,12 @@ def collection_context(path, *, manifest=None, diagnostics=None):
                     pending.append(dict(job_id=job['job_id'], reason='CSV or worker status changed during validation'))
                     continue
                 np.save(directory/f'{column}-dose.npy', dose)
-                np.save(directory/f'{column}-variance.npy', variance)
-                del dose, variance
+                if variance is not None:
+                    np.save(directory/f'{column}-variance.npy', variance)
                 warnings.extend(job_warnings)
-                checked_jobs.append(dict(job_id=job['job_id'],
+                checked_jobs.append(dict(job_id=job['job_id'], scorer_variance_available=variance is not None,
                     evidence='worker-succeeded and CSV-complete' if status else 'CSV-complete (exit status unverified)'))
+                del dose, variance
             if pending:
                 excluded.append(dict(batch_id=batch['batch_id'], jobs=pending,
                     missing_jobs=[j['job_id'] for j in pending if j['reason']=='missing CSV']))
@@ -100,7 +101,8 @@ def collection_context(path, *, manifest=None, diagnostics=None):
     manifest['_score_cache'] = cache
     manifest['_transport_batches'] = included
     repeated = len(included) > 1
-    metadata = dict(included_batches=[b['batch_id'] for b in included], excluded_batches=excluded,
+    variance_available = repeated or all(job['scorer_variance_available'] for job in evidence[0]['jobs'])
+    metadata = dict(variance_available=variance_available, included_batches=[b['batch_id'] for b in included], excluded_batches=excluded,
         replay_audit=replay_audit, completion_evidence=evidence, number_averaged=len(included), method='arithmetic mean of equal-history normalized columns',
         source_reuse='fixed saved replay particles; no reduction of source-sampling uncertainty',
         variance_convention=('between-batch variance / number of batches; conditional transport uncertainty'
@@ -108,6 +110,9 @@ def collection_context(path, *, manifest=None, diagnostics=None):
         fingerprints=[dict(batch_id=b['batch_id'], fingerprint=b.get('batch_fingerprint',manifest['bundle_id'])) for b in included],
         jobs=[dict(batch_id=b['batch_id'], job_id=j['job_id'], seed=j['seed'],
                    histories=j['histories'], normalization_histories=j.get('normalization_histories',j['histories']), replay_policy=j.get('replay_policy'), output=j['output']) for b in included for j in b['jobs']])
+    if not variance_available:
+        metadata['variance_convention'] = 'unavailable: single batch without scorer standard deviation'
+        manifest['forward_uncertainty'] = metadata['variance_convention']
     manifest['batch_metadata'] = metadata
     if repeated:
         manifest['forward_uncertainty'] = 'unavailable: batch averaging; combined covariance not implemented'
@@ -129,10 +134,14 @@ def _read_score(root, job, grid, normalization, diagnostics, number, total, star
     started = last_update = time.monotonic()
     print(f"Reading {number}/{total}: {job['job_id']} — {output} "
           f"({output.stat().st_size / 1024**2:.1f} MiB)", flush=True)
-    dose, variance = np.zeros(nvox), np.zeros(nvox)
+    dose, variance = np.empty(nvox), None
     processed = 0
     for row, value, var in score_chunks(output, job, grid, diagnostics=diagnostics, normalization=normalization, detect_incomplete=True):
-        dose[row], variance[row] = value, var
+        dose[row] = value
+        if var is not None:
+            if variance is None:
+                variance = np.empty(nvox)
+            variance[row] = var
         processed += len(row)
         now = time.monotonic()
         if now-last_update >= 5:
@@ -152,9 +161,10 @@ def iter_scores(bundle_dir, *, manifest=None, diagnostics=None):
             for n, batch in enumerate(batches, 1):
                 directory = Path(manifest['_score_cache'].name)/batch['batch_id']
                 dose = np.load(directory/f'{column}-dose.npy')
-                var = np.load(directory/f'{column}-variance.npy')
                 if n == 1:
-                    mean, variance = dose, var
+                    mean = dose
+                    if len(batches) == 1 and manifest['batch_metadata']['variance_available']:
+                        variance = np.load(directory/f'{column}-variance.npy')
                     if len(batches)>1: m2 = np.zeros_like(mean)
                 else:
                     delta = dose - mean
@@ -173,19 +183,25 @@ def collect_results(bundle_dir, max_matrix_bytes, *, manifest=None, diagnostics=
         columns, variances = [], []
         total_bytes = 0
         for _, dose, variance in iter_scores(root, manifest=manifest, diagnostics=diagnostics):
-            column, var_column = sp.csc_matrix(dose[:, None]), sp.csc_matrix(variance[:, None])
-            total_bytes += sum(a.nbytes for m in (column, var_column) for a in (m.data, m.indices, m.indptr))
+            column = sp.csc_matrix(dose[:, None])
+            total_bytes += column.data.nbytes + column.indices.nbytes + column.indptr.nbytes
+            if variance is not None:
+                var_column = sp.csc_matrix(variance[:, None])
+                variances.append(var_column)
+                total_bytes += var_column.data.nbytes + var_column.indices.nbytes + var_column.indptr.nbytes
             if 2 * total_bytes > max_matrix_bytes:
                 raise MemoryError("Matrix assembly exceeds max_matrix_bytes; use streaming forward dose or a coarser grid")
             columns.append(column)
-            variances.append(var_column)
         matrix = sp.hstack(columns, format="csc")
-        variance_matrix = sp.hstack(variances, format="csc")
         derived = output_root / "derived"
         derived.mkdir(exist_ok=True)
         from ..workflow.collection import atomic_path
-        with atomic_path(derived / "variance_of_mean.npz") as temp:
-            sp.save_npz(temp, variance_matrix)
+        variance_path = derived / "variance_of_mean.npz"
+        if variances:
+            with atomic_path(variance_path) as temp:
+                sp.save_npz(temp, sp.hstack(variances, format="csc"))
+        else:
+            variance_path.unlink(missing_ok=True)
         # Keep uncertainty separate: upstream Dij's variance multiplication uses
         # w rather than w^2. Our forward path below propagates independent errors.
         jobs = manifest["jobs"]
@@ -211,7 +227,10 @@ def collect_forward(weights, bundle_dir, *, manifest=None, diagnostics=None, on_
     try:
         grid = Grid.model_validate(manifest["dose_grid"])
         dose_sum = np.zeros(grid.num_voxels)
-        variance_sum = np.zeros(grid.num_voxels)
+        export_error = (manifest['batch_metadata']['variance_available']
+                        and manifest.get('normalization') != 'original_accelerator_history'
+                        and len(manifest['_transport_batches']) == 1)
+        variance_sum = np.zeros(grid.num_voxels) if export_error else None
         current_beam = None
         beam_sum = np.zeros(grid.num_voxels) if on_beam is not None else None
         for w, (job, dose, variance) in zip(weights, iter_scores(root, manifest=manifest, diagnostics=diagnostics)):
@@ -222,11 +241,12 @@ def collect_forward(weights, bundle_dir, *, manifest=None, diagnostics=None, on_
                 current_beam = job['beam_index']
                 beam_sum += w * dose
             dose_sum += w * dose
-            variance_sum += w * w * variance
+            if export_error:
+                variance_sum += w * w * variance
         if on_beam is not None and current_beam is not None:
             on_beam(current_beam, _image(beam_sum, grid))
         result = {"physical_dose": _image(dose_sum, grid)}
-        if manifest.get('normalization') != 'original_accelerator_history' and len(manifest['_transport_batches']) == 1:
+        if export_error:
             result['physical_dose_std_error'] = _image(np.sqrt(variance_sum), grid)
         return result
     finally:

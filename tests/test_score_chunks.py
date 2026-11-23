@@ -96,3 +96,24 @@ def test_progress_and_zero_weight_validation(case,monkeypatch,capsys):
     assert 'Reading 1/2:' in out and 'Validated 2/2:' in out and '500/4,800 bins' in out
     p=root/m['jobs'][0]['output'];p.write_text(p.read_text()+'0,0,0,0,0,10,0\n')
     with pytest.raises(ValueError,match='Duplicate'):engine.collect_forward([0.,0.])
+
+
+@pytest.mark.parametrize('single', [False, True])
+def test_compact_report(tmp_path, single):
+    path, job, grid, _, _ = fixture(tmp_path, single=single)
+    header, data = path.read_text().split('Sum Mean Histories_with_Scorer_Active Standard_Deviation\n')
+    header += 'Sum Histories_with_Scorer_Active\n'
+    compact = []
+    for line in data.splitlines():
+        *xyz, total, _, histories, _ = line.split(',')
+        compact.append(','.join([*xyz, total, histories]))
+    path.write_text(header + '\n'.join(compact) + '\n')
+    rows = list(score_rows(path, job, grid))
+    assert rows == [(i, 2.0*i, None) for i in range(len(compact))]
+    path.write_text(header + '\n'.join(compact[:-1]) + '\n')
+    with pytest.raises(ValueError, match='Incomplete'):
+        list(score_rows(path, job, grid))
+    compact[-1] = compact[-1].rsplit(',', 1)[0] + ',9'
+    path.write_text(header + '\n'.join(compact) + '\n')
+    with pytest.raises(ValueError, match='history'):
+        list(score_rows(path, job, grid))

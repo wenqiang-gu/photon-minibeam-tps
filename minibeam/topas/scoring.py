@@ -29,6 +29,7 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
     headers, lines = [], []
     count, started = 0, False
     single = False
+    full = False
 
     def parse(lines):
         nonlocal count
@@ -38,24 +39,28 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
             values = np.loadtxt(lines, delimiter=',', comments=None, ndmin=2)
         except ValueError as exc:
             raise ValueError('Malformed TOPAS CSV row: expected coordinate/statistic columns') from exc
-        expected = 4 if single else 7
+        expected = (4 if full else 2) + (0 if single else 3)
         if values.shape != (len(lines), expected):
-            raise ValueError('Expected X,Y,Z,Sum,Mean,Histories,Standard_Deviation columns')
+            raise ValueError('Data columns do not match dose report')
         stats = values if single else values[:, 3:]
         if not np.isfinite(values).all():
             raise ValueError('Nonfinite TOPAS score')
-        total, mean, histories, sd = stats.T
-        if np.any(stats[:, [0, 1, 3]] < 0):
+        if full:
+            total, mean, histories, sd = stats.T
+        else:
+            total, histories = stats.T
+        if np.any(stats < 0):
             raise ValueError('Negative dose/statistics')
         guarded = job.get('replay_policy') == 'nonempty_guard_v1'
         if np.any(histories != job['histories']) or np.any(histories < (1 if guarded else 2)):
             raise ValueError('Actual scorer history count differs from the requested count')
-        per_history = total / histories
-        # Match math.isclose's symmetric relative tolerance, not np.isclose's
-        # asymmetric reference value or additive absolute tolerance.
-        tolerance = np.maximum(1e-30, 2e-7 * np.maximum(np.abs(per_history), np.abs(mean)))
-        if np.any(np.abs(per_history - mean) > tolerance):
-            raise ValueError('TOPAS Sum/Histories disagrees with Mean')
+        if full:
+            per_history = total / histories
+            # Match math.isclose's symmetric relative tolerance, not np.isclose's
+            # asymmetric reference value or additive absolute tolerance.
+            tolerance = np.maximum(1e-30, 2e-7 * np.maximum(np.abs(per_history), np.abs(mean)))
+            if np.any(np.abs(per_history - mean) > tolerance):
+                raise ValueError('TOPAS Sum/Histories disagrees with Mean')
         if single:
             rows = np.zeros(len(lines), dtype=np.int64)
         else:
@@ -72,8 +77,11 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
         if guarded:
             if denominator < job['histories'] or denominator < 2:
                 raise ValueError('Invalid original-history denominator')
-            if job['histories']==1 and np.any(sd!=0):
+            if full and job['histories']==1 and np.any(sd!=0):
                 raise ValueError('Single transported history must have zero scorer SD')
+        if not full:
+            return rows, total / denominator, None
+        if guarded:
             # Add H-N zero-dose histories analytically. This stable form equals
             # (Q-S^2/H)/(H*(H-1)), Q=(N-1)*sd_N^2+S^2/N.
             variance = ((histories-1)*sd*sd + total*total*((denominator-histories)/histories/denominator)) / denominator / (denominator-1)
@@ -99,7 +107,7 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
             if not line.strip():
                 continue
             if not started:
-                _validate_header(headers, job, grid)
+                full = _validate_header(headers, job, grid)
                 warning = _scorer_warning(headers)
                 if warning:
                     warning.update(job_id=job.get('job_id', job['scorer']), csv_path=str(path),
@@ -112,7 +120,7 @@ def score_chunks(path, job, grid, *, diagnostics=None, normalization=None,
                           '  Validity requires user review; statistical uncertainty does not account for missing energy.')
                     if diagnostics is not None:
                         diagnostics.append(warning)
-                single = size == 1 and not any(re.match(r'# [XYZ] in ', h) for h in headers) and len(line.split(',')) == 4
+                single = size == 1 and not any(re.match(r'# [XYZ] in ', h) for h in headers) and len(line.split(',')) == (4 if full else 2)
                 started = True
             # TOPAS normally writes unquoted numbers. Preserve the legacy CSV
             # reader's quoted-number support without slowing ordinary numeric rows.
@@ -145,8 +153,8 @@ def score_rows(path, job, grid, *, diagnostics=None, normalization=None):
     """Compatibility row iterator; production assembly consumes score_chunks."""
     for rows, dose, variance in score_chunks(path, job, grid, diagnostics=diagnostics,
                                             normalization=normalization):
-        for row, value, var in zip(rows, dose, variance):
-            yield int(row), float(value), float(var)
+        for index, row in enumerate(rows):
+            yield int(row), float(dose[index]), None if variance is None else float(variance[index])
 
 
 _UNSCORED_WARNING = "# Warning: Some steps were not scored due to touchable returning an invalid index number."
@@ -192,12 +200,15 @@ def _validate_header(headers, job, grid):
     if not re.search(r"# TOPAS Version:.*4\.2(?:\.p?3|[ .-]+p3)", header):
         raise ValueError("Expected OpenTOPAS 4.2.p3 / 4.2.3 output")
     quantity = next((h for h in headers if h.startswith("# DoseToMedium")), "")
-    if not re.fullmatch(r"# DoseToMedium\s*\(\s*Gy\s*\)\s*:\s*Sum\s+Mean\s+Histories_with_Scorer_Active\s+Standard_Deviation\s*", quantity):
+    match = re.fullmatch(r"# DoseToMedium\s*\(\s*Gy\s*\)\s*:\s*(.*)", quantity)
+    columns = match[1].split() if match else []
+    full = columns == ['Sum', 'Mean', 'Histories_with_Scorer_Active', 'Standard_Deviation']
+    if not full and columns != ['Sum', 'Histories_with_Scorer_Active']:
         raise ValueError("Unexpected dose quantity, units or statistic columns")
     if tuple(grid['dimensions']) == (1,1,1) and not any(re.match(r'# [XYZ] in ', h) for h in headers):
         if '# Scored in component: Patient' not in headers:
             raise ValueError('Unsegmented scorer component mismatch')
-        return  # TOPAS omits bin coordinates and axis headers for a single voxel.
+        return full  # TOPAS omits bin coordinates and axis headers for a single voxel.
     scales = {"mm": 1., "cm": 10., "m": 1000.}
     for axis, n in zip("XYZ", grid["dimensions"]):
         match = re.search(rf"# {axis} in (\d+) bins?\s+of\s+([\d.eE+\-]+)\s+(mm|cm|m)", header)
@@ -206,10 +217,12 @@ def _validate_header(headers, job, grid):
         actual = float(match[2]) * scales[match[3]]
         if not math.isclose(actual, grid["resolution"][axis.lower()], rel_tol=1e-5, abs_tol=1e-6):
             raise ValueError(f"{axis} scoring-grid spacing mismatch")
+    return full
 
 
-
-def scorer_parameters(job, grid):
+def scorer_parameters(job, grid, full_statistics=False):
+    report = ('4 "Sum" "Mean" "Histories" "Standard_Deviation"' if full_statistics
+              else '2 "Sum" "Histories"')
     scorer = job["scorer"]
     lines = [f's:Sc/{scorer}/Quantity = "DoseToMedium"',
              f's:Sc/{scorer}/Component = "Patient"',
@@ -217,7 +230,7 @@ def scorer_parameters(job, grid):
              f's:Sc/{scorer}/OutputFile = "results/{job["job_id"]}"',
              f's:Sc/{scorer}/IfOutputFileAlreadyExists = "Exit"',
              f'b:Sc/{scorer}/OutputToConsole = "False"',
-             f'sv:Sc/{scorer}/Report = 4 "Sum" "Mean" "Histories" "Standard_Deviation"']
+             f'sv:Sc/{scorer}/Report = {report}']
     for axis, bins in zip("XYZ", grid["dimensions"]):
         lines.append(f'i:Sc/{scorer}/{axis}Bins = {bins}')
     return "\n".join(lines)

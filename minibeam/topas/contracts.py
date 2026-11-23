@@ -24,6 +24,7 @@ class RunSettings:
     dicom_dir: str | None = None
     water: bool = False
     max_matrix_bytes: int = 4 * 1024**3
+    full_statistics: bool = False
 
 @dataclass(frozen=True)
 class JobContext:

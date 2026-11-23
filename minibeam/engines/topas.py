@@ -20,6 +20,7 @@ class TOPASPhotonEngine(DoseEngineBase):
     histories: int = 10000
     seed: int = 12345
     number_of_batches: int = 1
+    full_statistics: bool = False
     num_threads: int = 1
     enable_opengl: bool = False
     phase_space_precheck: bool = True
@@ -72,6 +73,8 @@ class TOPASPhotonEngine(DoseEngineBase):
             raise ValueError("enforce_ct_crop_protection must be a Boolean")
         if type(self.phase_space_precheck) is not bool:
             raise ValueError("phase_space_precheck must be a Boolean")
+        if type(self.full_statistics) is not bool:
+            raise ValueError("full_statistics must be a boolean")
         if type(self.enable_opengl) is not bool:
             raise ValueError("enable_opengl must be a boolean")
         from ..topas.phase_space_recording import validate_recorders

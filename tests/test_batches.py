@@ -317,3 +317,56 @@ def test_changing_csv_excluded_and_cache_used_once(case, monkeypatch):
     list(results.iter_scores(root,manifest=manifest))
     assert len(calls)==count
     assert not Path(manifest['_score_cache'].name).exists()
+
+
+@pytest.mark.parametrize('full', [False, True])
+def test_report_choice_and_forward_collection(case, full):
+    engine = case[-1]
+    if full:
+        engine.full_statistics = True
+    root = prepared(case)
+    batches.add(root, 1)
+    manifest = load_manifest(root)
+    assert manifest['full_statistics'] is full
+    records = batches.inventory(root, manifest)
+    report = '4 "Sum" "Mean" "Histories" "Standard_Deviation"' if full else '2 "Sum" "Histories"'
+    for record in records:
+        for job in record['jobs']:
+            assert '/Report = ' + report in (root/job['parameter_file']).read_text()
+
+    derived = root/'derived'
+    def saved_dose():
+        collect_bundle(root, 'forward')
+        return sitk.GetArrayFromImage(sitk.ReadImage(derived/'dose_scoring_grid.mha'))
+    reference = saved_dose()
+    results.collect_results(root, 10**8)
+    assert (derived/'variance_of_mean.npz').exists()
+    batch_results(root, records[1], 3)
+    if not full:
+        for record in records:
+            for job in record['jobs']:
+                path = root/job['output']
+                lines = []
+                for line in path.read_text().splitlines():
+                    if line.startswith('#'):
+                        line = line.replace('Sum Mean Histories_with_Scorer_Active Standard_Deviation',
+                                            'Sum Histories_with_Scorer_Active')
+                    else:
+                        x, y, z, total, _, histories, _ = line.split(',')
+                        line = ','.join([x, y, z, total, histories])
+                    lines.append(line)
+                path.write_text('\n'.join(lines)+'\n')
+    # Recollect a single completed batch over the previous full-statistics artifacts.
+    marker = root/'job_status/batch_001'/ (records[1]['jobs'][0]['job_id']+'.status')
+    marker.parent.mkdir(parents=True)
+    marker.write_text('running\n')
+    np.testing.assert_array_equal(saved_dose(), reference)
+    assert (derived/'dose_std_error_dose_grid.mha').exists() is full
+    baseline = results.collect_results(root, 10**8).physical_dose.flat[0].toarray()
+    assert (derived/'variance_of_mean.npz').exists() is full
+    metadata = json.loads((derived/'forward_metadata.json').read_text())
+    assert metadata['batch_metadata']['variance_available'] is full
+    marker.unlink()
+    np.testing.assert_allclose(saved_dose(), 2*reference, atol=0)
+    results.collect_results(root, 10**8)
+    np.testing.assert_allclose(sp.load_npz(derived/'variance_of_mean.npz').toarray(), baseline**2, atol=0)

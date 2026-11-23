@@ -71,6 +71,7 @@ HISTORIES_PER_JOB = 680_000_000
 NUMBER_OF_BATCHES = 10
 RANDOM_SEED = 12345
 # CPU threads per TOPAS job, not the number of simultaneous jobs.
+TOPAS_FULL_STATISTICS = False  # True also reports Mean and Standard_Deviation
 TOPAS_THREADS_PER_JOB = 4
 
 # Hardware: disabling the collimator ignores all shift/slit overrides.
@@ -135,6 +136,7 @@ def planning_settings():
         topas_phase_space_precheck=TOPAS_PHASE_SPACE_PRECHECK,
         histories_per_job=HISTORIES_PER_JOB,
         number_of_batches=NUMBER_OF_BATCHES, random_seed=RANDOM_SEED,
+        topas_full_statistics=TOPAS_FULL_STATISTICS,
         topas_threads_per_job=TOPAS_THREADS_PER_JOB,
         enable_collimator=ENABLE_COLLIMATOR,
         geometry_config=GEOMETRY_CONFIG,

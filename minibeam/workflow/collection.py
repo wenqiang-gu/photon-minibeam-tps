@@ -251,7 +251,7 @@ def indexing_report(manifest, stage, image=None):
         'An empty ROI has an empty index list and an all-false mask. The first cst column retains pyRadPlan 0.5.0 zero-based structure numbering; it is not the original DICOM ROI number. Original DICOM ROI numbers and names are preserved in metadata.json (original_dicom_rois). Structure numbers, 1-based MATLAB table rows and 1-based voxel indices are distinct.',
         'Structure voxel indices use the CT cube in MATLAB [Y,X,Z] order. Do not use CT indices directly on a different scoring grid: resample/map the mask to that grid before extracting dose.', '',
         '## Forward dose, MHA and uncertainty', '',
-        '`variance_of_mean.npz` retains native rows: `x + nx*(y + ny*z)` for zero-based voxel coordinates; its rows are not MATLAB-permuted. Its columns follow the same job order.',
+        'When available, `variance_of_mean.npz` retains native rows: `x + nx*(y + ny*z)` for zero-based voxel coordinates; its rows are not MATLAB-permuted. Its columns follow the same job order.',
         f"Forward uncertainty: {manifest.get('forward_uncertainty', 'not specified')}.", '',
         f"Structure (`cst`) indices reference the CT grid {manifest['ct_grid']['dimensions']} (XYZ). CT and scoring grids {'match' if manifest['ct_grid']==manifest['dose_grid'] else 'differ'}.",
         'Forward weights follow the same column order. Forward dose sums weighted beamlet contributions into one cube; it does not retain separate columns.',

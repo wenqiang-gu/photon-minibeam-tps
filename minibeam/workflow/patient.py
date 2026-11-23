@@ -91,6 +91,7 @@ class PatientSettings:
     topas_phase_space_precheck: bool = True
     number_of_batches: int = 1
     random_seed: int = 12345
+    topas_full_statistics: bool = False
 
 
 # SHARED PLANNING HELPERS
@@ -124,6 +125,7 @@ def configure_plan(settings, *, project_dir):
         phase_space_selection=settings.phase_space_selection,
         phase_space_precheck=settings.topas_phase_space_precheck,
         number_of_batches=settings.number_of_batches, seed=settings.random_seed,
+        full_statistics=settings.topas_full_statistics,
         histories=settings.histories_per_job, num_threads=settings.topas_threads_per_job, execution=settings.beamlet_execution,
         water=False, enable_opengl=settings.enable_opengl, dose_spacing_mm=settings.dose_spacing_mm)
     plan.prop_dose_calc["dicom_dir"] = str(settings.dicom_dir)

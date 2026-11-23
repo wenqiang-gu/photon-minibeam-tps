@@ -195,7 +195,7 @@ class JobWriter:
             "geometry_text": self.geometry.text,
             "geometry_configuration": self.geometry_snapshot.text if self.geometry_snapshot else None,
             "assets": {k: bundle_io.sha256(v) for k, v in assets.items()},
-            "num_threads": self.num_threads, "enable_opengl": self.enable_opengl, "world_half_mm": world_half + 500.,
+            "full_statistics": self.full_statistics, "num_threads": self.num_threads, "enable_opengl": self.enable_opengl, "world_half_mm": world_half + 500.,
         }
         return signature, dicom_files, material, assets, center
 
@@ -276,7 +276,7 @@ class JobWriter:
             lines = ['includeFile = inputs/devices.txt', source,
                      f'i:Ts/Seed = {job["seed"]}',
                      f'i:So/{job["source_name"]}/NumberOfHistoriesInRun = {job["histories"]}',
-                     scorer_parameters(job, definition["dose_grid"])]
+                     scorer_parameters(job, definition["dose_grid"], self.full_statistics)]
             if job.get('phase_space_recorders'):
                 lines.append(phase_space_scorer_parameters(job['phase_space_recorders']))
             if "visualization_slice" in job:
@@ -292,7 +292,7 @@ class JobWriter:
                     ("pyRadPlan", "numpy", "scipy", "SimpleITK", "pydicom")}
         manifest = {"schema_version": 4, "history_budget": "per_job", "beamlet_execution": self.beamlet_execution, "request_id": request_id, "files": files,
                     "implementation_sha256": definition["implementation_sha256"],
-                    "enable_opengl": self.enable_opengl, "num_threads": self.num_threads,
+                    "full_statistics": self.full_statistics, "enable_opengl": self.enable_opengl, "num_threads": self.num_threads,
                     "phase_space_precheck": self.phase_space_precheck,
                     "versions": versions, "topas_target": "4.2.p3", "jobs": jobs,
                     "planning": definition["planning"],
