@@ -39,7 +39,7 @@ PHASE_SPACE_SELECTION = "all_forward"
 TOPAS_PHASE_SPACE_PRECHECK = False
 PHASE_SPACE_FILE_BASES = [
     # '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM/step09',
-    '/Users/wgu/Local/photon-minibeam-tps/projects/phsp/VSM-elekta-style/primary_sigma_x_0p5mm_y_0p75mm_680m/step09',
+    '/Users/wgu/Downloads/Virtual_Source_Model/virtual-source-model/runs/elekta_precise_6mv_primary_only_erf_on_axis_q3_0p527_sx0p5mm_sy2p0mm_680m/step09',
 ]
 # Total original histories (including empty histories) for the combined job;
 # primary photons for point mode. NOT multiplied by the number of bixels.
