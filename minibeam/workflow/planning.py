@@ -38,7 +38,9 @@ def photon_machine(sad_mm):
 
 
 def topas_settings(*, project_dir, source_type, phase_space_file_bases, histories,
-                   num_threads, execution, water, enable_opengl, dose_spacing_mm, phase_space_selection="field", number_of_batches=1, seed=12345, phase_space_precheck=True, full_statistics=False):
+                   num_threads, execution, water, enable_opengl, dose_spacing_mm, phase_space_selection="field",
+                   number_of_batches=1, seed=12345, phase_space_precheck=True, full_statistics=False,
+                   outside_field_survival_probability=1.0):
     """Build independent engine settings without opening source files."""
     positive_integer('NUMBER_OF_BATCHES', number_of_batches)
     positive_integer('RANDOM_SEED', seed)
@@ -57,15 +59,21 @@ def topas_settings(*, project_dir, source_type, phase_space_file_bases, historie
         raise ValueError('SOURCE_TYPE must be point or phase_space')
     source = {'type': source_type}
     if source_type == 'phase_space':
-        from ..sources.phase_space import validate_selection
+        from ..sources.phase_space import validate_selection, resolve_outside_field_survival_probability
         validate_selection(phase_space_selection, execution)
+        probability = resolve_outside_field_survival_probability(phase_space_selection, outside_field_survival_probability)
         source['file_bases'] = deepcopy(phase_space_file_bases)
         source['selection'] = phase_space_selection
+        if probability < 1.0:
+            source['outside_field_survival_probability'] = probability
         print(f'Phase-space selection: {phase_space_selection}')
         if phase_space_selection == 'outside_field':
             print('Outside-field incident particles only: complement of the selected bixel union; not a target-volume exclusion. Original-history normalization is unchanged.')
-        if phase_space_selection == 'all_forward':
+        if phase_space_selection == 'all_forward' and probability == 1.0:
             print('All downstream source particles: physical hardware defines irradiation; planning bixels do not restrict fluence.')
+        if probability < 1.0:
+            print(f'Outside-field roulette: survival probability {probability:g}; survivor weight multiplier '
+                  f'{1.0 / probability:g}. Field membership uses the selected bixel union.')
     settings = dict(number_of_batches=number_of_batches, seed=seed, engine='TOPASPhoton', bundle_dir=str(project_dir), histories=histories,
                     num_threads=num_threads, full_statistics=full_statistics, beamlet_execution=execution, water=water,
                     enable_opengl=enable_opengl, phase_space_precheck=phase_space_precheck, source_config=source)

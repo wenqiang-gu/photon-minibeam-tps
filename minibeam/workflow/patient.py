@@ -92,6 +92,7 @@ class PatientSettings:
     number_of_batches: int = 1
     random_seed: int = 12345
     topas_full_statistics: bool = False
+    phase_space_outside_field_survival_probability: float = 1.0
 
 
 # SHARED PLANNING HELPERS
@@ -123,6 +124,7 @@ def configure_plan(settings, *, project_dir):
     plan.prop_dose_calc = topas_settings(
         project_dir=project_dir, source_type=settings.source_type, phase_space_file_bases=settings.phase_space_file_bases,
         phase_space_selection=settings.phase_space_selection,
+        outside_field_survival_probability=settings.phase_space_outside_field_survival_probability,
         phase_space_precheck=settings.topas_phase_space_precheck,
         number_of_batches=settings.number_of_batches, seed=settings.random_seed,
         full_statistics=settings.topas_full_statistics,

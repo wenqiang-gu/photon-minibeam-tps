@@ -41,6 +41,7 @@ class WaterSettings:
     field_size_mm: float | None = None
     phase_space_recorders: list[dict] = field(default_factory=list)
     topas_full_statistics: bool = False
+    phase_space_outside_field_survival_probability: float = 1.0
 
 
 # SHARED PLANNING HELPERS
@@ -89,6 +90,7 @@ def build_planning(settings, project_dir):
     plan.prop_dose_calc = topas_settings(
         project_dir=root, source_type=settings.source_type, phase_space_file_bases=settings.phase_space_file_bases,
         phase_space_selection=settings.phase_space_selection,
+        outside_field_survival_probability=settings.phase_space_outside_field_survival_probability,
         phase_space_precheck=settings.topas_phase_space_precheck,
         number_of_batches=settings.number_of_batches, seed=settings.random_seed,
         full_statistics=settings.topas_full_statistics,

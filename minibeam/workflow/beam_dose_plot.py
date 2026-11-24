@@ -125,6 +125,9 @@ class BeamDosePlots:
                       weights=[float(self.weights[i]) for i,_ in jobs],
                       weight_units=self.manifest['weight_units'], missing_targets=self.missing,
                       calculation_region=self.manifest.get('provenance', {}).get('synthetic') == 'water')
+        for _, job in jobs:
+            if roulette := job.get('source', {}).get('outside_field_roulette'):
+                record['outside_field_roulette'] = roulette
         self.records.append(record)
         try:
             view = project_beam(self.ct, self.masks, dose, parameters)
@@ -195,8 +198,13 @@ class BeamDosePlots:
                 if not view['dose'].any(): notices.append('This beam has zero dose.')
                 if record['phase_space_selection'] == 'outside_field':
                     notices.append('Outside-field incident-particle contribution; bixels define the excluded region. Projection shows only the displayed depth slab.')
+                if roulette := record.get('outside_field_roulette'):
+                    notices.append(f"Outside-field roulette p={roulette['survival_probability']:g}; "
+                                   "surviving weights scaled by 1/p.")
                 if record['phase_space_selection'] == 'all_forward':
-                    notices.append('All-forward source; bixels do not limit irradiation. Projection shows only the displayed depth slab.')
+                    source_note = ('In-field particles keep their original weights.' if roulette else
+                                   'All-forward source; bixels do not limit irradiation.')
+                    notices.append(f'{source_note} Projection shows only the displayed depth slab.')
                 warnings = [d for d in self.diagnostics if d['job_id'].split('/')[-1] in record['job_ids']]
                 record['scorer_warnings'] = warnings
                 if warnings: notices.append(f'SCORER WARNINGS ({len(warnings)} jobs): validity requires user review; see indexing.md.')

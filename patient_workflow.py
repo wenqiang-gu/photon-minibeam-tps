@@ -52,6 +52,9 @@ SOURCE_TYPE = "phase_space"  # "point" or "phase_space"
 # all_forward also requires combined execution; hardware defines irradiation.
 # HISTORIES_PER_JOB counts original histories, not selected particles.
 PHASE_SPACE_SELECTION = "field"
+# In all_forward/outside_field, retain each outside-bixel particle with this
+# probability and divide its weight by that probability. 1.0 disables roulette.
+PHASE_SPACE_OUTSIDE_FIELD_SURVIVAL_PROBABILITY = 1.0
 # Validate the TOPAS replay file before transport (also point-source replay).
 # Disable only for an unchanged replay pair already checked successfully.
 # TOPAS requires this when PhaseSpaceIncludeEmptyHistories=True.
@@ -133,6 +136,7 @@ def planning_settings():
         source_type=SOURCE_TYPE,
         phase_space_file_bases=PHASE_SPACE_FILE_BASES,
         phase_space_selection=PHASE_SPACE_SELECTION,
+        phase_space_outside_field_survival_probability=PHASE_SPACE_OUTSIDE_FIELD_SURVIVAL_PROBABILITY,
         topas_phase_space_precheck=TOPAS_PHASE_SPACE_PRECHECK,
         histories_per_job=HISTORIES_PER_JOB,
         number_of_batches=NUMBER_OF_BATCHES, random_seed=RANDOM_SEED,

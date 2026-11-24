@@ -85,15 +85,24 @@ class TOPASPhotonEngine(DoseEngineBase):
         if self.source_config is not None:
             if not isinstance(self.source_config,dict):
                 raise ValueError('source_config must be a dictionary')
-            kind=self.source_config.get('type')
-            if kind=='point' and set(self.source_config)=={'type'}:
+            source_options = dict(self.source_config)
+            kind = source_options.get('type')
+            probability_key = 'outside_field_survival_probability'
+            if kind == 'point':
+                source_options.pop(probability_key, None)
+            if kind=='point' and set(source_options)=={'type'}:
                 source_model=PointBeamletSource()
-            elif kind=='phase_space' and set(self.source_config) - {'selection'} in ({'type','file_base'}, {'type','file_bases'}):
+            elif kind=='phase_space' and set(source_options) - {'selection', probability_key} in ({'type','file_base'}, {'type','file_bases'}):
                 from ..sources.phase_space import PhaseSpaceBeamletSource
-                source_model=PhaseSpaceBeamletSource(**{k:v for k,v in self.source_config.items() if k != 'type'})
+                source_model=PhaseSpaceBeamletSource(**{k:v for k,v in source_options.items() if k != 'type'})
+                probability = source_model.outside_field_survival_probability
+                if probability < 1.0:
+                    source_options[probability_key] = probability
+                else:
+                    source_options.pop(probability_key, None)
             else:
                 raise ValueError('source_config requires type=point, or type=phase_space and exactly one of file_base or file_bases')
-            self._plan_info['source_configuration']=json_data(self.source_config)
+            self._plan_info['source_configuration']=json_data(source_options)
         if self.beamlet_execution not in {"separate", "combined"}:
             raise ValueError("beamlet_execution must be separate or combined")
         self.source_model = source_model or PointBeamletSource()

@@ -82,11 +82,12 @@ def reference_hardware_settings(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def isolate_editable_crop_settings(monkeypatch):
-    """Synthetic workflow cases must not inherit a user's patient-sized crop."""
+def isolate_editable_patient_settings(monkeypatch):
+    """Keep regressions independent of a researcher's editable crop and replay settings."""
     import patient_workflow
     monkeypatch.setattr(patient_workflow, 'CT_CROP_VOXELS', None)
     monkeypatch.setattr(patient_workflow, 'ENFORCE_CT_CROP_PROTECTION', True)
+    monkeypatch.setattr(patient_workflow, 'PHASE_SPACE_OUTSIDE_FIELD_SURVIVAL_PROBABILITY', 1.0)
 
 
 @pytest.fixture(autouse=True)
@@ -94,7 +95,8 @@ def isolate_editable_water_settings(monkeypatch):
     """Keep regressions independent of a researcher's editable run settings."""
     import water_phantom
     for key, value in dict(FIELD_SIZE_MM=100., SSD_MM=1000., NUMBER_OF_BATCHES=1,
-                           TOPAS_PHASE_SPACE_PRECHECK=True, PHASE_SPACE_RECORDERS=[]).items():
+                           TOPAS_PHASE_SPACE_PRECHECK=True, PHASE_SPACE_RECORDERS=[],
+                           PHASE_SPACE_OUTSIDE_FIELD_SURVIVAL_PROBABILITY=1.0).items():
         monkeypatch.setattr(water_phantom, key, value)
 
 

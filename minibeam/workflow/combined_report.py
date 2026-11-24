@@ -5,6 +5,8 @@ def combined_report(manifest, stage, image=None):
     from ..topas.manifest import phase_space_selection
     outside = phase_space_selection(manifest) == 'outside_field'
     unrestricted = phase_space_selection(manifest) == 'all_forward'
+    roulette_jobs = [(j, j['source']['outside_field_roulette']) for j in manifest['jobs']
+                     if j.get('source', {}).get('outside_field_roulette')]
     base = indexing_report(dict(manifest,beamlet_execution='separate'),stage,image)
     base = base.replace('j = 1;  % choose a global beamlet column','j = 1;  % choose an aggregate beam column')
     base = base.replace('beamletCube =', 'beamCube =')
@@ -12,7 +14,10 @@ def combined_report(manifest, stage, image=None):
     start = base.index('## Beamlet columns and TOPAS jobs')
     stop = base.index('## Structures and CT voxels')
     lines = ['## Aggregate beam columns and TOPAS jobs', '',
-        ('Execution: combined; selection: all_forward. Each column is a whole-source beam dose, not a sum limited to the listed planning bixels. Members are planning references only.' if unrestricted else 'Execution: combined; selection: outside_field. Each column is an outside-field incident-particle contribution, not a sum of its listed bixels. Members define the excluded square union.' if outside else 'Execution: combined. Each column sums all selected bixels of one beam; it is not an individual native bixel.'),
+        ('Execution: combined; selection: all_forward with roulette. Each column estimates a whole-source beam dose. The member bixel union defines which trajectories retain their original weights.' if unrestricted and roulette_jobs else
+         'Execution: combined; selection: all_forward. Each column is a whole-source beam dose, not a sum limited to the listed planning bixels. Members are planning references only.' if unrestricted else
+         'Execution: combined; selection: outside_field. Each column is an outside-field incident-particle contribution, not a sum of its listed bixels. Members define the excluded square union.' if outside else
+         'Execution: combined. Each column sums all selected bixels of one beam; it is not an individual native bixel.'),
         '`beamNum` is a 1-based native beam index. `rayNum` and `bixelNum` are 0 sentinels (−1 in native Python Dij), meaning not applicable. Never use them to index stf.',
         '`stf` remains the full native steering. `column_mapping` is a MATLAB cell array identifying each aggregate and its native members.', '',
         '| Column | Beam | Gantry / couch (deg) | Native bixels | TOPAS job |', '|---|---|---|---|---|']
@@ -30,5 +35,22 @@ def combined_report(manifest, stage, image=None):
     elif manifest['normalization']=='independent_primary_photon':
         lines += ['Point source: N photons total per job are sampled uniformly over the selected square union. Divide scored sum by N. A forward weight is the total number of photons for this beam, distributed across its member bixels by area.', '']
     else:
-        lines += [('Phase space: all downstream records appear once, without a projected-field cut,' if unrestricted else 'Phase space: each downstream record outside the selected square union appears once,' if outside else 'Phase space: each selected record appears once in the square union,') + ' with original histories and particle weights preserved. Divide by represented original histories, not by particles or number of members.', '']
+        if roulette_jobs:
+            lines += ['### Outside-field roulette', '',
+                      'Each eligible particle survives with probability p and carries its incident weight divided by p. '
+                      'In-field weights are unchanged when included. Normalize by the original history budget.',
+                      'Transport batches reuse the same survivors. Their uncertainty is conditional on that sample.', '',
+                      '| Job | p | Weight multiplier | Seed | Eligible | Retained | Discarded | Eligible weight | Retained reweighted sum |',
+                      '|---|---:|---:|---:|---:|---:|---:|---:|---:|']
+            for job, stats in roulette_jobs:
+                multiplier = stats['survivor_weight_multiplier']
+                if isinstance(multiplier, float):
+                    multiplier = f'{multiplier:g}'
+                lines.append(f"| {job['job_id']} | {stats['survival_probability']:g} | {multiplier} | {stats['seed']} | "
+                             f"{stats['eligible_particles']:,} | {stats['retained_particles']:,} | "
+                             f"{stats['discarded_particles']:,} | {stats['eligible_weight_sum']:.6g} | "
+                             f"{stats['retained_reweighted_weight_sum']:.6g} |")
+            lines.append('')
+        else:
+            lines += [('Phase space: all downstream records appear once, without a projected-field cut,' if unrestricted else 'Phase space: each downstream record outside the selected square union appears once,' if outside else 'Phase space: each selected record appears once in the square union,') + ' with original histories and particle weights preserved. Divide by represented original histories, not by particles or number of members.', '']
     return base[:start]+'\n'.join(lines)+'\n'+base[stop:]

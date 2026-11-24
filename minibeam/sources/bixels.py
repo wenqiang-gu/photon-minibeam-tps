@@ -22,6 +22,21 @@ def contains(selection, x, y):
     return (x >= center[0]-half) & (x < center[0]+half) & (y >= center[1]-half) & (y < center[1]+half)
 
 
+def rectangle_bounds(squares):
+    """Return bounds only for a verified, gap-free Cartesian grid of squares."""
+    cells = set()
+    for square in squares:
+        x, y = square['center_xy_mm']
+        half = square['width_mm']/2
+        cells.add(((x-half, x+half), (y-half, y+half)))
+    xs, ys = (sorted({cell[axis] for cell in cells}) for axis in (0, 1))
+    if not cells or len(cells) != len(xs)*len(ys):
+        return None
+    if any(a[1] != b[0] for intervals in (xs, ys) for a, b in zip(intervals, intervals[1:])):
+        return None
+    return xs[0][0], xs[-1][1], ys[0][0], ys[-1][1]
+
+
 def groups(stf, execution='separate'):
     if execution not in {'separate','combined'}:
         raise ValueError('beamlet_execution must be separate or combined')

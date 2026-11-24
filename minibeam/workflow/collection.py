@@ -426,6 +426,10 @@ def collect_bundle(root, stage, *, weight_per_bixel=1.0):
         status['batch_metadata'] = manifest['batch_metadata']
         status['replay_metadata'] = [dict(job_id=j['job_id'], replay=j.get('source',{}).get('replay')) for j in manifest['jobs']]
         status['phase_space_selection'] = phase_space_selection(manifest)
+        roulette = [dict(job_id=j['job_id'], **j['source']['outside_field_roulette']) for j in manifest['jobs']
+                    if j.get('source', {}).get('outside_field_roulette')]
+        if roulette:
+            status['outside_field_roulette'] = roulette
         status['crop_metadata'] = manifest.get('crop_metadata')
         status['scorer_warnings'] = diagnostics
         status['review_required'] = bool(diagnostics)

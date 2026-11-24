@@ -267,6 +267,35 @@ scatter. Target-depth maximum-projection plots can omit dose elsewhere; use the
 full scoring-grid dose for quantitative additivity checks. No paired-difference
 uncertainty is currently supplied.
 
+### Outside-field Russian roulette
+
+Set `PHASE_SPACE_OUTSIDE_FIELD_SURVIVAL_PROBABILITY` in either workflow to a
+probability in `(0, 1]`. The default `1.0` preserves ordinary replay. For example,
+`0.25` keeps each eligible outside-field particle with probability one quarter
+and multiplies each survivor's statistical weight by four. The rule applies to
+photons, electrons and positrons in `all_forward` and `outside_field`. Point
+sources and `field` ignore the setting.
+
+Field membership uses the same projected bixel union as `outside_field`.
+Water uses the configured square at its entrance. Patients use their selected
+native bixels. With a single central bixel, particles outside that one square
+are eligible even if their trajectories pass within the physical hardware opening.
+In `all_forward`, in-field particles retain their original weights.
+
+Survivor weights preserve the expected dose per original accelerator history.
+Finite samples fluctuate, particularly in the tails and other regions where
+discarded trajectories contribute dose. Compare dose and uncertainty with a
+`p=1.0` baseline before choosing a probability. Lower probabilities can reduce transport
+time at the cost of more sampling noise. The original-history denominator is
+unchanged, including histories with no surviving particles.
+
+Use a fresh project when changing the probability or `RANDOM_SEED`. Matching
+source files, history prefixes, bixel geometry and seed give the same
+outside-field survivors in both modes. Appended batches reuse that survivor
+sample. To measure roulette variation, independently prepare multiple projects
+with different seeds. The manifest and saved indexing report record the
+probability and selection counts.
+
 ## Effective source and spectrum modifications
 
 The standalone modifier creates spectrum-reweighted and effective focal-spot
